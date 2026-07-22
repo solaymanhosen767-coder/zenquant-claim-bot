@@ -746,7 +746,7 @@ async function runConfirm(chatId, isAuto, customAmount) {
 
     // Remaining balance → Closed 3h order (type=1, minuteIndex=180)
     try {
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 20000));
       const di2 = await apiGetDealInfo();
       const remBal = Math.floor(Number(di2.data?.userinfo?.balance || 0));
       if (remBal >= 10) {
