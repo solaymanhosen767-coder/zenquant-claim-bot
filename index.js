@@ -61,6 +61,19 @@ api.interceptors.request.use(async cfg => {
 const app = express();
 app.use(express.json());
 app.get('/', (req, res) => res.send('ZenQuant Claim Bot v2 is running.'));
+app.get('/ip', async (req, res) => {
+  try {
+    const r = await axios.get('https://httpbin.org/ip', { timeout: 5000 });
+    res.json({ outboundIp: r.data?.origin, headers: req.headers });
+  } catch (e) {
+    try {
+      const r = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
+      res.json({ outboundIp: r.data?.ip, headers: req.headers });
+    } catch (e2) {
+      res.json({ error: e.message, error2: e2.message });
+    }
+  }
+});
 
 const isRailway = !!process.env.RAILWAY_SERVICE_ID;
 const bot = isRailway
