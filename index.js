@@ -742,20 +742,44 @@ async function runConfirm(chatId, isAuto, customAmount) {
       throw new Error('PLUS+ injection failed: ' + (order1.msg || JSON.stringify(order1.data).substring(0, 100)));
     }
 
+    let injectedMsg = `➕ PLUS+: $${amount} (3H)`;
+
+    // Remaining balance → Closed 3h order (type=1, minuteIndex=180)
+    try {
+      await new Promise(r => setTimeout(r, 2000));
+      const di2 = await apiGetDealInfo();
+      const remBal = Math.floor(Number(di2.data?.userinfo?.balance || 0));
+      if (remBal >= 10) {
+        send(`⏳ Remaining $${remBal} → Closed 3h order creating...`);
+        const order2 = await apiCreateOrder(1, remBal, 180);
+        if (order2.success) {
+          injectedMsg += `\n🔒 Closed: $${remBal} (3H)`;
+        } else {
+          send(`ℹ️ Closed skip: ${order2.msg}`);
+        }
+      } else {
+        send(`ℹ️ Remaining $${remBal} < $10, no Closed order.`);
+      }
+    } catch (e) {
+      console.error('Closed order error:', e.message);
+      send(`ℹ️ Closed order error: ${e.message}`);
+    }
+
     lastActionTime = new Date();
     lastInjectionTime = new Date();
-    lastActionStatus = `✅ Injected $${amount}`;
+    lastActionStatus = `✅ Injected`;
 
     // Receive_times from site = actual countdown in seconds
     let countdownSec = 0;
-    let orderSn = '';
     try {
       await new Promise(r => setTimeout(r, 3000));
-      const dealRes = await apiGetDealList(1, 5, 0);
+      const dealRes = await apiGetDealList(1, 20, null);
       if (dealRes.success && dealRes.data.length) {
-        const latest = dealRes.data[0];
-        orderSn = latest.ordersn || '';
-        if (latest.receive_times > 0) countdownSec = Number(latest.receive_times);
+        const activeOrders = dealRes.data.filter(o => Number(o.status || 0) === 1 && Number(o.receive_times || 0) > 0);
+        if (activeOrders.length) {
+          const longest = activeOrders.sort((a, b) => Number(b.receive_times || 0) - Number(a.receive_times || 0))[0];
+          countdownSec = Number(longest.receive_times);
+        }
       }
     } catch (_) {}
 
@@ -765,7 +789,7 @@ async function runConfirm(chatId, isAuto, customAmount) {
       nextClaimTime = new Date(Date.now() + (countdownSec * 1000) + BUFFER_MS);
     } else {
       hasActiveOrder = true;
-      activeOrderCountdown = 10800; // 3h fallback
+      activeOrderCountdown = 10800;
       nextClaimTime = new Date(Date.now() + CLAIM_INTERVAL_MS);
     }
 
@@ -774,7 +798,7 @@ async function runConfirm(chatId, isAuto, customAmount) {
 
     send(`✅ *Injection successful!*
 ━━━━━━━━━━━━━━━━
-➕ PLUS+: $${amount} (3H)
+${injectedMsg}
 ⏳ Countdown: ${formatCountdown(activeOrderCountdown)} + 2min buffer
 ━━━━━━━━━━━━━━━━
 🔜 Next claim: ${nextClaimTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
@@ -919,3 +943,4 @@ ping(); // startup e ekbar
 setInterval(ping, 4 * 60 * 1000);
 
 console.log('Bot v2 started.');
+
