@@ -63,17 +63,13 @@ app.use(express.json());
 app.get('/', (req, res) => res.send('ZenQuant Claim Bot v2 is running.'));
 
 const isRailway = !!process.env.RAILWAY_SERVICE_ID;
-const isRender = !!process.env.RENDER_EXTERNAL_URL;
-const useWebhook = isRailway || isRender;
-const botDomain = process.env.RAILWAY_STATIC_URL || process.env.RENDER_EXTERNAL_URL || '';
-
-const bot = useWebhook
+const bot = isRailway
   ? new TelegramBot(BOT_TOKEN)
   : new TelegramBot(BOT_TOKEN, { polling: true });
 
-if (useWebhook && botDomain) {
-  const cleanUrl = botDomain.replace(/\/+$/, '');
-  bot.setWebHook(`${cleanUrl}/webhook/${BOT_TOKEN}`).catch(() => {});
+if (isRailway) {
+  const RAILWAY_URL = `https://zenquant-bot-2.railway.app`;
+  bot.setWebHook(`${RAILWAY_URL}/webhook/${BOT_TOKEN}`);
   app.post(`/webhook/${BOT_TOKEN}`, (req, res) => {
     bot.processUpdate(req.body);
     res.sendStatus(200);
@@ -177,9 +173,9 @@ async function apiClaimOrder(ordersn) {
   } catch (e) { return { success: false, msg: e.message }; }
 }
 
-async function apiCreateOrder(type, price, minuteIndex, isNew) {
+async function apiCreateOrder(type, price, minuteIndex) {
   try {
-    const res = await api.post('/createOrder', { type, price, minuteIndex: minuteIndex || 0, is_new: isNew !== undefined ? isNew : 1 });
+    const res = await api.post('/createOrder', { type, price, minuteIndex: minuteIndex || 0, is_new: 1 });
     const body = res.data;
     if (body?.success) return { success: true, msg: '', data: body };
     const code = body?.code || '';
@@ -271,7 +267,7 @@ bot.onText(/\/start/, async (msg) => {
       if (remainingMs > 0) lines.push(`⏳ *Countdown:* ${formatCountdown(remainingSec)}`);
       lines.push(`🔜 *Next Claim:* ${nextClaimTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
     } else if (nextClaimTime) {
-      lines.push(`🔜 *Next Claim:* ${nextClaimTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
+      lines.push(`🔜 *Next Retry:* ${nextClaimTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
     }
   } else {
     lines.push('❌ *Login:* Kora nai');
@@ -469,7 +465,7 @@ async function sendStatus(chatId) {
     lines.push(`⏳ *Countdown:* ${countdownStr}`);
     lines.push(`🔜 *Next Claim:* ${nextClaimTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
   } else if (nextClaimTime) {
-    lines.push(`🔜 *Next Claim:* ${nextClaimTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
+    lines.push(`🔜 *Next Retry:* ${nextClaimTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
   } else {
     lines.push(`🔜 *Next:* N/A`);
   }
@@ -535,33 +531,20 @@ if (autoClaimOn && isLoggedIn() && autoClaimChatId) {
 }
 
 async function autoCycle(chatId) {
-  await refreshActiveOrder();
-  // If no active order, inject first
-  if (!hasActiveOrder && isLoggedIn()) {
-    await runConfirm(chatId, true);
-    // After inject, wait for countdown and schedule
-    if (nextClaimTime) {
-      scheduleNext();
-    } else {
-      nextClaimTime = new Date(Date.now() + CLAIM_INTERVAL_MS);
-      creds.nextClaimAt = nextClaimTime.toISOString();
-      saveCredentials(creds);
-      scheduleNext();
-    }
-    return;
-  }
   const claimed = await runClaim(chatId, false, true);
   if (claimed) {
     const delay = 25000 + Math.floor(Math.random() * 11000);
     await new Promise((r) => setTimeout(r, delay));
     await runConfirm(chatId, true);
   } else {
+    // No profit to claim — maybe countdown still running, schedule next
     if (!nextClaimTime || nextClaimTime <= Date.now()) {
       nextClaimTime = new Date(Date.now() + CLAIM_INTERVAL_MS);
       creds.nextClaimAt = nextClaimTime.toISOString();
       saveCredentials(creds);
     }
   }
+  // Always schedule next cycle when current one finishes
   scheduleNext();
 }
 
@@ -695,6 +678,7 @@ async function runClaim(chatId, manual, isAuto) {
 async function runConfirm(chatId, isAuto, customAmount) {
   if (!isLoggedIn()) return bot.sendMessage(chatId, '❌ Age /login diye login korun.');
   if (isClaiming) {
+    // Safety: if stuck more than 5 min, auto-reset
     if (lastActionTime && (Date.now() - lastActionTime.getTime()) > 300000) {
       isClaiming = false;
       console.log('isClaiming was stuck >5min, force reset');
@@ -717,84 +701,61 @@ async function runConfirm(chatId, isAuto, customAmount) {
   try {
     send('⏳ Info nicchi...');
 
+    // Use getDealInfo for correct order-creation balance
     const dealInfo = await apiGetDealInfo();
-    console.log('[dealInfo]', JSON.stringify(dealInfo.data).substring(0, 1000));
     if (!dealInfo.success || !dealInfo.data) throw new Error('API response failed');
     const dealData = dealInfo.data;
     const ui = dealData.userinfo || {};
     const orderBalance = Number(ui.balance || 0);
 
+    // Also get regular info for virtual check
     const info = await apiGetInfo();
     const u = info?.userinfo || {};
 
-    const totalAmount = customAmount ? Math.min(customAmount, Math.floor(orderBalance)) : Math.floor(orderBalance);
+    let amount = customAmount || Math.floor(orderBalance);
+    const MAX_INJECT = 50;
+    if (amount > MAX_INJECT && !customAmount) {
+      amount = MAX_INJECT;
+      send(`ℹ️ Balance $${orderBalance}, but max injection $${MAX_INJECT}. Using $${MAX_INJECT}.`);
+    }
 
-    if (totalAmount < 10) {
+    if (amount < 1) {
       hasActiveOrder = false; activeOrderCountdown = 0;
       lastActionStatus = `ℹ️ Balance kom ($${orderBalance}), injection skip`;
       nextClaimTime = new Date(Date.now() + CLAIM_INTERVAL_MS);
       creds.nextClaimAt = nextClaimTime.toISOString();
       saveCredentials(creds);
-      send(`ℹ️ Balance kom ($${orderBalance}). Injection hobe na.
-🔜 Next: ${nextClaimTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
+      send(`ℹ️ Balance kom ($${orderBalance}). 1 dollar na hole injection hobe na.
+🔜 পরের চেষ্টা: ${nextClaimTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
       return;
     }
 
     if (customAmount && customAmount > orderBalance) {
-      send(`⚠️ Custom amount ($${customAmount}) > balance! ${Math.floor(orderBalance)} use korchi.`);
+      send(`⚠️ Custom amount ($${customAmount}) balance er cheye beshi! ${Math.floor(orderBalance)} use korchi.`);
+      amount = Math.floor(orderBalance);
     }
 
-    let ordersCreated = [];
-    let maxCountdown = 0;
-
-    // PLUS+: min $10, max $50
-    const plusAmount = Math.min(totalAmount, 50);
-    if (plusAmount >= 10) {
-      send(`⏳ PLUS+ $${plusAmount} inject korchi...`);
-      const res = await apiCreateOrder(2, plusAmount, 0, 1);
-      if (res.success) {
-        ordersCreated.push({ type: 'PLUS+', amount: plusAmount });
-        const remaining = totalAmount - plusAmount;
-        // 3 hours: remaining balance (if any)
-        if (remaining >= 10) {
-          await new Promise(r => setTimeout(r, 3000));
-          send(`⏳ 3 Hours $${remaining} inject korchi...`);
-          const res3 = await apiCreateOrder(0, remaining, 0, 1);
-          if (res3.success) {
-            ordersCreated.push({ type: '3 Hours', amount: remaining });
-          } else {
-            console.log('[3H fail]', JSON.stringify(res3.data));
-            send(`ℹ️ 3H $${remaining} fail: ${res3.msg}. Balance stays.`);
-          }
-        }
-      } else {
-        send(`❌ PLUS+ $${plusAmount} failed: ${res.msg}`);
-        lastActionStatus = `❌ PLUS+ fail: ${res.msg}`;
-      }
-    } else {
-      send(`ℹ️ Balance $${totalAmount} < $10, skip.`);
-    }
-
-    if (ordersCreated.length === 0) {
-      send('ℹ️ Kono order create kora hoyni.');
-      return;
+    send(`⏳ PLUS+ injection create korchi $${amount} (balance: $${orderBalance})...`);
+    const order1 = await apiCreateOrder(2, amount, 0);
+    if (!order1.success) {
+      hasActiveOrder = false; activeOrderCountdown = 0;
+      throw new Error('PLUS+ injection failed: ' + (order1.msg || JSON.stringify(order1.data).substring(0, 100)));
     }
 
     lastActionTime = new Date();
     lastInjectionTime = new Date();
-    const totalInjected = ordersCreated.reduce((s, o) => s + o.amount, 0);
-    lastActionStatus = `✅ Injected $${totalInjected} (${ordersCreated.length} orders)`;
+    lastActionStatus = `✅ Injected $${amount}`;
 
+    // Receive_times from site = actual countdown in seconds
     let countdownSec = 0;
+    let orderSn = '';
     try {
       await new Promise(r => setTimeout(r, 3000));
-      const dealRes = await apiGetDealList(1, 10, 0);
+      const dealRes = await apiGetDealList(1, 5, 0);
       if (dealRes.success && dealRes.data.length) {
-        for (const o of dealRes.data) {
-          if (o.receive_times > 0) {
-            countdownSec = Math.max(countdownSec, Number(o.receive_times));
-          }
-        }
+        const latest = dealRes.data[0];
+        orderSn = latest.ordersn || '';
+        if (latest.receive_times > 0) countdownSec = Number(latest.receive_times);
       }
     } catch (_) {}
 
@@ -804,25 +765,24 @@ async function runConfirm(chatId, isAuto, customAmount) {
       nextClaimTime = new Date(Date.now() + (countdownSec * 1000) + BUFFER_MS);
     } else {
       hasActiveOrder = true;
-      activeOrderCountdown = 10800;
+      activeOrderCountdown = 10800; // 3h fallback
       nextClaimTime = new Date(Date.now() + CLAIM_INTERVAL_MS);
     }
 
     creds.nextClaimAt = nextClaimTime.toISOString();
     saveCredentials(creds);
 
-    const orderSummary = ordersCreated.map(o => `➕ ${o.type}: $${o.amount} (3H)`).join('\n');
     send(`✅ *Injection successful!*
 ━━━━━━━━━━━━━━━━
-${orderSummary}
-━━━━━━━━━━━━━━━━
-💰 Total: $${totalInjected}
+➕ PLUS+: $${amount} (3H)
 ⏳ Countdown: ${formatCountdown(activeOrderCountdown)} + 2min buffer
+━━━━━━━━━━━━━━━━
 🔜 Next claim: ${nextClaimTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
 
   } catch (err) {
     console.error('runConfirm error:', err);
     lastActionStatus = `❌ ${err.message}`;
+    // Don't blindly clear hasActiveOrder — refresh from API
     await refreshActiveOrder().catch(() => {});
     if (!hasActiveOrder) {
       nextClaimTime = new Date(Date.now() + 30 * 60 * 1000);
@@ -952,26 +912,10 @@ async function runHistory(chatId) {
 process.on('unhandledRejection', (err) => { console.error('UHR:', err.message); });
 process.on('uncaughtException', (err) => { console.error('UCE:', err.message); });
 
-// Self-ping every 4 min to prevent free tier spin-down
-const MY_URL = process.env.RENDER_EXTERNAL_URL || 'http://103.86.199.216:3000';
-const ping = () => {
-  const mod = MY_URL.startsWith('https') ? require('https') : require('http');
-  mod.get(MY_URL, () => {}).on('error', () => {});
-};
-ping();
+// Self-ping every 4 min to prevent Render free tier spin-down
+const MY_URL = process.env.RENDER_EXTERNAL_URL || 'https://zenquant-claim-bot-srv.onrender.com';
+const ping = () => https.get(MY_URL, () => {}).on('error', () => {});
+ping(); // startup e ekbar
 setInterval(ping, 4 * 60 * 1000);
 
 console.log('Bot v2 started.');
-
-
-
-
-
-
-
-
-
-
-
-
-
