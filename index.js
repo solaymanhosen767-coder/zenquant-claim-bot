@@ -61,21 +61,6 @@ api.interceptors.request.use(async cfg => {
 const app = express();
 app.use(express.json());
 app.get('/', (req, res) => res.send('ZenQuant Claim Bot v2 is running.'));
-app.get('/ip', async (req, res) => {
-  const services = [
-    { url: 'https://api.ipify.org?format=json', path: 'ip' },
-    { url: 'https://httpbin.org/ip', path: 'origin' },
-    { url: 'https://ifconfig.me/all.json', path: 'remote_host' },
-  ];
-  for (const svc of services) {
-    try {
-      const r = await axios.get(svc.url, { timeout: 3000, headers: { 'User-Agent': 'curl/8.0' } });
-      const ip = r.data?.[svc.path] || '';
-      if (ip) return res.json({ outboundIp: ip.split(',')[0].trim() });
-    } catch (_) {}
-  }
-  res.json({ error: 'Could not determine IP' });
-});
 
 const isRailway = !!process.env.RAILWAY_SERVICE_ID;
 const bot = isRailway
