@@ -10,9 +10,10 @@ const OWNER_ID = process.env.OWNER_ID;
 const COUNTRY_CODE = process.env.COUNTRY_CODE || '880';
 const API_BASE = 'https://api.zenquantai.com/api';
 
-// 3 hours 2 minutes (2 min buffer so we never call before the order actually matures)
+// 3 hours 2 min + random 0-10 min jitter to avoid bot detection
 const BUFFER_MS = 2 * 60 * 1000;
 const CLAIM_INTERVAL_MS = 3 * 60 * 60 * 1000 + BUFFER_MS;
+const JITTER_MS = 10 * 60 * 1000;
 
 const api = axios.create({ baseURL: API_BASE });
 let authToken = null;
@@ -82,9 +83,21 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000);
 
+const USER_AGENTS = [
+  'Mozilla/5.0 (Android 14; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0',
+  'Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 Chrome/120.0.6099.144 Mobile Safari/537.36',
+  'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 Chrome/121.0.6167.101 Mobile Safari/537.36',
+  'Mozilla/5.0 (iPhone14,3; iOS 17.2) AppleWebKit/605.1.15 Mobile/15E148',
+  'Mozilla/5.0 (Linux; Android 12; SM-G998B) AppleWebKit/537.36 Chrome/119.0.6045.163 Mobile Safari/537.36',
+];
+
 api.interceptors.request.use(async cfg => {
   if (authToken) cfg.headers.Authorization = 'Bearer ' + authToken;
-  await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
+  cfg.headers['User-Agent'] = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+  cfg.headers['Accept'] = 'application/json, text/plain, */*';
+  cfg.headers['Accept-Language'] = 'en-US,en;q=0.9,bn;q=0.8';
+  cfg.headers['X-Requested-With'] = 'XMLHttpRequest';
+  await new Promise(r => setTimeout(r, 2000 + Math.random() * 4000));
   return cfg;
 });
 
@@ -551,14 +564,15 @@ function turnOff(chatId) {
   bot.sendMessage(chatId, '🔴 Auto Claim OFF.', mainMenu());
 }
 
-function scheduleNext() {
+ function scheduleNext() {
   if (claimTimer) clearTimeout(claimTimer);
   if (!autoClaimOn || !autoClaimChatId) return;
+  const jitter = Math.floor(Math.random() * JITTER_MS);
   if (nextClaimTime) {
-    const delay = Math.max(0, nextClaimTime.getTime() - Date.now());
+    const delay = Math.max(0, nextClaimTime.getTime() - Date.now()) + jitter;
     claimTimer = setTimeout(() => { autoCycle(autoClaimChatId); }, delay);
   } else {
-    claimTimer = setTimeout(() => { autoCycle(autoClaimChatId); }, CLAIM_INTERVAL_MS);
+    claimTimer = setTimeout(() => { autoCycle(autoClaimChatId); }, CLAIM_INTERVAL_MS + jitter);
   }
 }
 
