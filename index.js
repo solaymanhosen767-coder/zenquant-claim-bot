@@ -75,12 +75,36 @@ async function autoLoginOnStart() {
 }
 autoLoginOnStart();
 
+// Keep session alive: ping API every 30 min to prevent token expiry
+setInterval(() => {
+  if (authToken) {
+    api.get('/get_info', {}).catch(() => {});
+  }
+}, 30 * 60 * 1000);
+
 api.interceptors.request.use(async cfg => {
   if (authToken) cfg.headers.Authorization = 'Bearer ' + authToken;
-  // Random 1-3 sec delay before each API call to look human
   await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
   return cfg;
 });
+
+api.interceptors.response.use(
+  res => res,
+  async error => {
+    if (error.response?.status === 401 && creds.phone && creds.password) {
+      console.log('Token expired, re-logging in...');
+      const result = await apiLogin(creds.phone, creds.password);
+      if (result.success) {
+        authToken = result.token;
+        creds.token = result.token;
+        saveCredentials(creds);
+        error.config.headers.Authorization = 'Bearer ' + authToken;
+        return api(error.config);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 const app = express();
 app.use(express.json());
