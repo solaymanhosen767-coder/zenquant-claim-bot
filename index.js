@@ -51,6 +51,30 @@ if (creds.token) authToken = creds.token;
 if (creds.nextClaimAt) nextClaimTime = new Date(creds.nextClaimAt);
 if (creds.autoClaimChatId) autoClaimChatId = creds.autoClaimChatId;
 
+async function autoLoginOnStart() {
+  const envPhone = process.env.PHONE;
+  const envPass = process.env.PASSWORD;
+  if (!envPhone || !envPass) return;
+  if (creds.token && creds.phone === envPhone) return;
+  console.log('Auto-login with env vars...');
+  const result = await apiLogin(envPhone, envPass);
+  if (result.success) {
+    creds.phone = envPhone;
+    creds.password = envPass;
+    creds.token = result.token;
+    authToken = result.token;
+    try {
+      const info = await apiGetInfo();
+      if (info?.userinfo?.username) creds.name = info.userinfo.username;
+    } catch (_) {}
+    saveCredentials(creds);
+    console.log('Auto-login successful.');
+  } else {
+    console.error('Auto-login failed:', result.error);
+  }
+}
+autoLoginOnStart();
+
 api.interceptors.request.use(async cfg => {
   if (authToken) cfg.headers.Authorization = 'Bearer ' + authToken;
   // Random 1-3 sec delay before each API call to look human
