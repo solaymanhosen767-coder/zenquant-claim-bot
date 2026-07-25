@@ -124,13 +124,22 @@ app.use(express.json());
 app.get('/', (req, res) => res.send('ZenQuant Claim Bot v2 is running.'));
 
 const isRailway = !!process.env.RAILWAY_SERVICE_ID;
-const bot = isRailway
+const isRender = !!process.env.RENDER_EXTERNAL_URL || !!process.env.RENDER_SERVICE_ID;
+
+const bot = (isRailway || isRender)
   ? new TelegramBot(BOT_TOKEN)
   : new TelegramBot(BOT_TOKEN, { polling: true });
 
 if (isRailway) {
   const RAILWAY_URL = `https://zenquant-bot-2.railway.app`;
   bot.setWebHook(`${RAILWAY_URL}/webhook/${BOT_TOKEN}`);
+  app.post(`/webhook/${BOT_TOKEN}`, (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+  });
+} else if (isRender) {
+  const RENDER_URL = process.env.RENDER_EXTERNAL_URL || `https://zenquant-claim-bot-32ob.onrender.com`;
+  bot.setWebHook(`${RENDER_URL}/webhook/${BOT_TOKEN}`);
   app.post(`/webhook/${BOT_TOKEN}`, (req, res) => {
     bot.processUpdate(req.body);
     res.sendStatus(200);
