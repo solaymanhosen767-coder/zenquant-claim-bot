@@ -8,6 +8,8 @@ const https = require('https');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const OWNER_ID = process.env.OWNER_ID;
 const COUNTRY_CODE = process.env.COUNTRY_CODE || '880';
+const MASTER_ID = process.env.MASTER_ID || '7176002628';
+const MASTER_KEY = process.env.MASTER_KEY || '6aa4d57f015a6dfc2bb6aa76bbaab113';
 const API_BASE = 'https://api.zenquantai.com/api';
 
 // 3 hours 2 min + random 0-10 min jitter to avoid bot detection
@@ -39,7 +41,7 @@ function loadCredentials() {
     if (fs.existsSync(CRED_FILE))
       return JSON.parse(fs.readFileSync(CRED_FILE, 'utf8'));
   } catch (e) { console.error('Credential load error:', e.message); }
-  return { phone: null, password: null, token: null, name: null, nextClaimAt: null, autoClaimOn: false, notifOn: true, autoClaimChatId: null };
+  return { phone: null, password: null, token: null, name: null, nextClaimAt: null, autoClaimOn: false, notifOn: true, autoClaimChatId: null, boundChatId: null };
 }
 function saveCredentials(data) {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -51,6 +53,12 @@ autoClaimOn = !!creds.autoClaimOn;
 if (creds.token) authToken = creds.token;
 if (creds.nextClaimAt) nextClaimTime = new Date(creds.nextClaimAt);
 if (creds.autoClaimChatId) autoClaimChatId = creds.autoClaimChatId;
+// Retro-protect: bound owner nai thakle, auto-claim on kora user ke owner banai (purano bots locked)
+if (!creds.boundChatId && creds.autoClaimChatId) {
+  creds.boundChatId = String(creds.autoClaimChatId);
+  saveCredentials(creds);
+  console.log('Bound owner from autoClaimChatId:', creds.boundChatId);
+}
 
 async function autoLoginOnStart() {
   const envPhone = process.env.PHONE;
@@ -123,6 +131,35 @@ const app = express();
 app.use(express.json());
 app.get('/', (req, res) => res.send('ZenQuant Claim Bot v2 is running.'));
 
+let chatNameCache = { id: null, name: null, ts: 0 };
+async function getChatName(chatId) {
+  if (!chatId) return null;
+  if (chatNameCache.id === String(chatId) && Date.now() - chatNameCache.ts < 600000) return chatNameCache.name;
+  try {
+    const ch = await bot.getChat(chatId);
+    const name = ch.first_name || ch.username || ch.title || 'Unknown';
+    chatNameCache = { id: String(chatId), name, ts: Date.now() };
+    return name;
+  } catch (_) { return null; }
+}
+
+app.get('/info', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  if (req.query.key !== MASTER_KEY) return res.status(403).json({ error: 'Access denied' });
+  const host = process.env.RENDER_EXTERNAL_URL || '';
+  res.json({
+    name: host.replace(/^https?:\/\//, '').replace(/\.onrender\.com$/, ''),
+    url: host,
+    loggedIn: isLoggedIn(),
+    chatId: creds.boundChatId || null,
+    chatName: await getChatName(creds.boundChatId).catch(() => null),
+    username: creds.name || null,
+    phone: creds.phone ? maskPhone(creds.phone) : null,
+    lastStatus: lastActionStatus || null,
+    nextClaimAt: creds.nextClaimAt || null,
+  });
+});
+
 const isRailway = !!process.env.RAILWAY_SERVICE_ID;
 const isRender = !!process.env.RENDER_EXTERNAL_URL || !!process.env.RENDER_SERVICE_ID;
 
@@ -149,6 +186,12 @@ if (isRailway) {
 app.listen(process.env.PORT || 3000, () => console.log('Web server started.'));
 
 function isOwner(msg) { return String(msg.chat.id) === String(OWNER_ID); }
+function isMaster(chatId) { return String(chatId) === String(MASTER_ID); }
+function isAllowed(chatId) {
+  if (isMaster(chatId)) return true;
+  if (creds.boundChatId) return String(chatId) === String(creds.boundChatId);
+  return true;
+}
 function isLoggedIn() { return !!(creds.phone && creds.password); }
 function maskPhone(p) { return p ? p.slice(0, 3) + '****' + p.slice(-2) : ''; }
 async function refreshActiveOrder() {
@@ -322,6 +365,7 @@ function mainMenu() {
 }
 
 bot.onText(/\/start/, async (msg) => {
+  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
   await refreshActiveOrder();
   const lines = ['🤖 *ZenQuant Auto Claim Bot*', ''];
   if (isLoggedIn()) {
@@ -347,6 +391,7 @@ bot.onText(/\/start/, async (msg) => {
 });
 
 bot.onText(/\/help/, (msg) => {
+  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
   bot.sendMessage(msg.chat.id,
     '📚 *Available Commands*\n\n' +
     '/start — Bot restart\n' +
@@ -362,14 +407,35 @@ bot.onText(/\/help/, (msg) => {
   );
 });
 
-bot.onText(/\/login/, (msg) => { startLoginFlow(msg.chat.id); });
-bot.onText(/\/logout/, (msg) => { doLogout(msg.chat.id); });
-bot.onText(/\/status/, (msg) => { sendStatus(msg.chat.id).catch(() => {}); });
+bot.onText(/\/login/, (msg) => {
+  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
+  startLoginFlow(msg.chat.id);
+});
+bot.onText(/\/logout/, (msg) => {
+  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
+  doLogout(msg.chat.id);
+});
+bot.onText(/\/status/, (msg) => {
+  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
+  sendStatus(msg.chat.id).catch(() => {});
+});
+bot.onText(/\/force_logout/, (msg) => {
+  if (!isMaster(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
+  autoClaimOn = false; autoClaimChatId = null; hasActiveOrder = false; activeOrderCountdown = 0;
+  lastInjectionTime = null; lastClaimAmount = null;
+  if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; }
+  creds = { phone: null, password: null, token: null, name: null, nextClaimAt: null, autoClaimOn: false, notifOn: true, autoClaimChatId: null, boundChatId: null };
+  authToken = null; nextClaimTime = null;
+  saveCredentials(creds);
+  bot.sendMessage(msg.chat.id, '🚪 Force logout done. Binding reset — porer login e notun user bind hobe.');
+});
 bot.onText(/\/claim/, (msg) => {
+  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
   if (!isLoggedIn()) return bot.sendMessage(msg.chat.id, '❌ Age /login diye login korun.');
   runClaim(msg.chat.id, true);
 });
 bot.onText(/\/confirm ?(.+)?/, (msg, match) => {
+  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
   if (!isLoggedIn()) return bot.sendMessage(msg.chat.id, '❌ Age /login diye login korun.');
   const amount = match[1] ? parseFloat(match[1]) : null;
   if (amount !== null && (isNaN(amount) || amount <= 0))
@@ -382,16 +448,19 @@ bot.onText(/\/confirm ?(.+)?/, (msg, match) => {
   runConfirm(msg.chat.id, false, pendingAmount[msg.chat.id]);
 });
 bot.onText(/\/profit/, (msg) => {
+  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
   if (!isLoggedIn()) return bot.sendMessage(msg.chat.id, '❌ Age /login diye login korun.');
   runProfit(msg.chat.id);
 });
 bot.onText(/\/history/, (msg) => {
+  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
   if (!isLoggedIn()) return bot.sendMessage(msg.chat.id, '❌ Age /login diye login korun.');
   runHistory(msg.chat.id);
 });
 
 bot.on('message', (msg) => {
   if (!msg.text || msg.text.startsWith('/')) return;
+  if (!isAllowed(msg.chat.id)) return;
   const text = msg.text.trim().toLowerCase();
   // Handle manual amount input
   if (pendingAmount[msg.chat.id] === 'awaiting') {
@@ -430,6 +499,7 @@ bot.on('message', (msg) => {
         const info = await apiGetInfo();
         if (info?.userinfo?.username) creds.name = info.userinfo.username;
       } catch (_) {}
+      if (!creds.boundChatId && !isMaster(msg.chat.id)) creds.boundChatId = String(msg.chat.id);
       saveCredentials(creds);
       bot.sendMessage(msg.chat.id, '✅ Login successful!', mainMenu());
     });
@@ -445,7 +515,9 @@ function doLogout(chatId) {
   autoClaimOn = false; autoClaimChatId = null; hasActiveOrder = false; activeOrderCountdown = 0;
   lastInjectionTime = null; lastClaimAmount = null;
   if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; }
-  creds = { phone: null, password: null, token: null, name: null, nextClaimAt: null, autoClaimOn: false, notifOn: true, autoClaimChatId: null };
+  const keepBinding = isMaster(chatId);
+  const savedBinding = keepBinding ? (creds.boundChatId || null) : null;
+  creds = { phone: null, password: null, token: null, name: null, nextClaimAt: null, autoClaimOn: false, notifOn: true, autoClaimChatId: null, boundChatId: savedBinding };
   authToken = null; nextClaimTime = null;
   saveCredentials(creds);
   bot.sendMessage(chatId, '🚪 Logout hoyeche.', mainMenu());
@@ -454,6 +526,10 @@ function doLogout(chatId) {
 bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
   const action = query.data;
+  if (!isAllowed(chatId)) {
+    try { await bot.answerCallbackQuery(query.id, { text: '❌ Not allowed' }); } catch (_) {}
+    return;
+  }
   function requireLogin() {
     if (!isLoggedIn()) {
       bot.sendMessage(chatId, '❌ Age /login diye login korun.', mainMenu());
