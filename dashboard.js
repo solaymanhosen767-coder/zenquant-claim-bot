@@ -50,7 +50,9 @@ async function fetchInfo(bot, key) {
     if (r.data && r.data.error) return { ...bot, ok: false, error: r.data.error };
     return { ...bot, ok: true, info: r.data };
   } catch (e) {
-    return { ...bot, ok: false, error: e.code || 'timeout/error' };
+    const code = e.response ? e.response.status : (e.code || 'error');
+    if (code === 404) return { ...bot, ok: false, error: 'old-version' };
+    return { ...bot, ok: false, error: 'offline' };
   }
 }
 
@@ -80,7 +82,7 @@ async function render(ctx) {
       <td>${i.chatName ? esc(i.chatName) : '—'}</td>
       <td>${i.username ? esc(i.username) : '—'}</td>
       <td>${i.phone ? esc(i.phone) : '—'}</td>
-      <td class="status-cell">${t.ok ? esc(i.lastStatus || '—') : '⚠ ' + esc(t.error)}</td>
+      <td>${t.ok ? esc(i.lastStatus || '—') : t.error === 'old-version' ? '⚠ Old version' : '⚠ Offline'}</td>
       <td>${t.ok ? fmtNext(i.nextClaimAt) : '—'}</td>
     </tr>`;
   });
