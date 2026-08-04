@@ -41,7 +41,8 @@ const BOTS = [
   { name: 'adrian7-bot', region: 'Virginia', url: 'https://adrian7-bot.onrender.com', tg: '@Zenclaimv57bot' },
   { name: 'fahim2-bot', region: 'Oregon', url: 'https://fahim2-bot.onrender.com', tg: '@Zenclaimv58bot' },
   { name: 'fahim3-bot', region: 'Virginia', url: 'https://fahim3-bot.onrender.com', tg: '@Zenclaimv59bot' },
-  { name: 'pervej-bot', region: 'Singapore', url: 'https://pervej-bot.onrender.com', tg: '@Zenclaimv60bot' }
+  { name: 'pervej-bot', region: 'Singapore', url: 'https://pervej-bot.onrender.com', tg: '@Zenclaimv60bot' },
+  { name: 'adrian8-bot', region: 'Oregon', url: 'https://adrian8-bot.onrender.com', tg: '@Zenclaimv61bot' }
 ];
 
 sc = (v) => v === null || v === undefined ? '' : String(v);
