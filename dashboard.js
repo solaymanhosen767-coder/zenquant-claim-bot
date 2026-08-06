@@ -52,7 +52,9 @@ const BOTS = [
   { name: 'fahim8-bot', region: 'Singapore', url: 'https://fahim8-bot.onrender.com', tg: '@Zenclaimv67bot' },
   { name: 'fahim9-bot', region: 'Virginia', url: 'https://fahim9-bot.onrender.com', tg: '@Zenclaimv68bot' },
   { name: 'fahim10-bot', region: 'Oregon', url: 'https://fahim10-bot.onrender.com', tg: '@Zenclaimv69bot' },
-  { name: 'fahim11-bot', region: 'Frankfurt', url: 'https://fahim11-bot.onrender.com', tg: '@Zenclaimv70bot' }
+  { name: 'fahim11-bot', region: 'Frankfurt', url: 'https://fahim11-bot.onrender.com', tg: '@Zenclaimv70bot' },
+  { name: 'fahim12-bot', region: 'Ohio', url: 'https://fahim12-bot.onrender.com', tg: '@Zenclaimv71bot' },
+  { name: 'fahim13-bot', region: 'Singapore', url: 'https://fahim13-bot.onrender.com', tg: '@Zenclaimv72bot' }
 ];
 
 sc = (v) => v === null || v === undefined ? '' : String(v);
