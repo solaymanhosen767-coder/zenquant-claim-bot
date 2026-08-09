@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const crypto = require('crypto');
 
 const PORT = process.env.PORT || 3000;
 const KEY = process.env.MASTER_KEY || '6aa4d57f015a6dfc2bb6aa76bbaab113';
@@ -202,19 +203,41 @@ app.use(express.json());
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_REPO = 'solaymanhosen767-coder/zenquant-claim-bot';
+const ENC_KEY = process.env.ENC_KEY || '';
+
+function encKey() { return crypto.createHash('sha256').update(ENC_KEY).digest(); }
+
+function encryptObj(obj) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', encKey(), iv);
+  const pt = Buffer.from(JSON.stringify(obj), 'utf8');
+  const ct = Buffer.concat([cipher.update(pt), cipher.final()]);
+  return { v: 1, iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), ct: ct.toString('base64') };
+}
+
+function decryptObj(wrap) {
+  if (wrap && typeof wrap === 'object' && wrap.ct) {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', encKey(), Buffer.from(wrap.iv, 'base64'), Buffer.from(wrap.tag, 'base64'));
+    const pt = Buffer.concat([decipher.update(Buffer.from(wrap.ct, 'base64')), decipher.final()]);
+    return JSON.parse(pt.toString('utf8'));
+  }
+  return wrap;
+}
 
 async function gitGetCreds() {
   const r = await axios.get(`https://api.github.com/repos/${GITHUB_REPO}/contents/creds_store.json`, {
     headers: { Authorization: 'Bearer ' + GITHUB_TOKEN, Accept: 'application/vnd.github+json' },
     timeout: 10000
   });
-  return { sha: r.data.sha, data: JSON.parse(Buffer.from(r.data.content, 'base64').toString('utf8')) };
+  const raw = JSON.parse(Buffer.from(r.data.content, 'base64').toString('utf8'));
+  return { sha: r.data.sha, data: decryptObj(raw) };
 }
 
 async function gitPutCreds(data, sha) {
+  const payload = encryptObj(data);
   await axios.put(`https://api.github.com/repos/${GITHUB_REPO}/contents/creds_store.json`, {
     message: 'chore: update creds store',
-    content: Buffer.from(JSON.stringify(data, null, 2)).toString('base64'),
+    content: Buffer.from(JSON.stringify(payload, null, 2)).toString('base64'),
     sha
   }, {
     headers: { Authorization: 'Bearer ' + GITHUB_TOKEN, Accept: 'application/vnd.github+json' },
