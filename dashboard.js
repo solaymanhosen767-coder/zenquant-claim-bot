@@ -108,18 +108,19 @@ async function render(ctx) {
   threads.forEach((t, idx) => {
     const i = t.info || {};
     const login = t.ok && i.loggedIn;
+    const isOld = t.error === 'old-version';
     rows += `<tr class="${login ? 'row-ok' : 'row-off'}">
       <td>${idx + 1}</td>
       <td><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a></td>
       <td>${esc(t.region)}</td>
       <td>${esc(i.tg || t.tg)}</td>
-      <td class="login-cell">${login ? '✅ Logged In' : '❌ Logged Out'}</td>
-      <td>${i.chatId ? esc(i.chatId) : '—'}</td>
-      <td>${i.chatName ? esc(i.chatName) : '—'}</td>
-      <td>${i.username ? esc(i.username) : '—'}</td>
-      <td>${i.phone ? esc(i.phone) : '—'}</td>
-      <td>${t.ok ? esc(i.lastStatus || '—') : t.error === 'old-version' ? '⚠ Old version' : '⚠ Offline'}</td>
-      <td>${t.ok ? fmtNext(i.nextClaimAt) : '—'}</td>
+      <td class="login-cell">${isOld ? '—' : login ? '✅ Logged In' : '❌ Logged Out'}</td>
+      <td>${isOld ? '—' : i.chatId ? esc(i.chatId) : '—'}</td>
+      <td>${isOld ? '—' : i.chatName ? esc(i.chatName) : '—'}</td>
+      <td>${isOld ? '—' : i.username ? esc(i.username) : '—'}</td>
+      <td>${isOld ? '—' : i.phone ? esc(i.phone) : '—'}</td>
+      <td>${t.ok ? esc(i.lastStatus || '—') : isOld ? '⚠ Old version' : '⚠ Offline'}</td>
+      <td>${isOld ? '—' : t.ok ? fmtNext(i.nextClaimAt) : '—'}</td>
     </tr>`;
   });
 
