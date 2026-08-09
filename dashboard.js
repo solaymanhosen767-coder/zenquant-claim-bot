@@ -208,29 +208,48 @@ const ENC_KEY = process.env.ENC_KEY || '';
 function encKey() { return crypto.createHash('sha256').update(ENC_KEY).digest(); }
 
 function encryptObj(obj) {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', encKey(), iv);
-  const pt = Buffer.from(JSON.stringify(obj), 'utf8');
-  const ct = Buffer.concat([cipher.update(pt), cipher.final()]);
-  return { v: 1, iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), ct: ct.toString('base64') };
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', encKey(), iv);
+  const ct = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(obj), 'utf8')), cipher.final()]);
+  const mac = crypto.createHmac('sha256', encKey()).update(Buffer.concat([iv, ct])).digest();
+  return { v: 2, iv: iv.toString('base64'), mac: mac.toString('base64'), ct: ct.toString('base64') };
 }
 
 function decryptObj(wrap) {
-  if (wrap && typeof wrap === 'object' && wrap.ct) {
-    const decipher = crypto.createDecipheriv('aes-256-gcm', encKey(), Buffer.from(wrap.iv, 'base64'), Buffer.from(wrap.tag, 'base64'));
-    const pt = Buffer.concat([decipher.update(Buffer.from(wrap.ct, 'base64')), decipher.final()]);
+  if (wrap && typeof wrap === 'object' && wrap.ct && wrap.mac) {
+    const key = encKey();
+    const iv = Buffer.from(wrap.iv, 'base64');
+    const ct = Buffer.from(wrap.ct, 'base64');
+    const mac = Buffer.from(wrap.mac, 'base64');
+    const expect = crypto.createHmac('sha256', key).update(Buffer.concat([iv, ct])).digest();
+    if (mac.length !== expect.length || !crypto.timingSafeEqual(mac, expect)) throw new Error('creds integrity check failed');
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+    const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
     return JSON.parse(pt.toString('utf8'));
   }
   return wrap;
 }
 
 async function gitGetCreds() {
-  const r = await axios.get(`https://api.github.com/repos/${GITHUB_REPO}/contents/creds_store.json`, {
-    headers: { Authorization: 'Bearer ' + GITHUB_TOKEN, Accept: 'application/vnd.github+json' },
-    timeout: 10000
-  });
-  const raw = JSON.parse(Buffer.from(r.data.content, 'base64').toString('utf8'));
-  return { sha: r.data.sha, data: decryptObj(raw) };
+  try {
+    const r = await axios.get(`https://api.github.com/repos/${GITHUB_REPO}/contents/creds_store.json`, {
+      headers: { Authorization: 'Bearer ' + GITHUB_TOKEN, Accept: 'application/vnd.github+json' },
+      timeout: 10000
+    });
+    const raw = JSON.parse(Buffer.from(r.data.content, 'base64').toString('utf8'));
+    return { sha: r.data.sha, data: decryptObj(raw) };
+  } catch (e) {
+    if (e.message && e.message.includes('integrity')) throw e;
+    try {
+      const r = await axios.get(`https://api.github.com/repos/${GITHUB_REPO}/contents/creds_store.json`, {
+        headers: { Authorization: 'Bearer ' + GITHUB_TOKEN, Accept: 'application/vnd.github+json' },
+        timeout: 10000
+      });
+      return { sha: r.data.sha, data: {} };
+    } catch (e2) {
+      return { sha: null, data: {} };
+    }
+  }
 }
 
 async function gitPutCreds(data, sha) {
