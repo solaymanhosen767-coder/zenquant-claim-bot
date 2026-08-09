@@ -198,6 +198,59 @@ async function render(ctx) {
 }
 
 const app = express();
+app.use(express.json());
+
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const GITHUB_REPO = 'solaymanhosen767-coder/zenquant-claim-bot';
+
+async function gitGetCreds() {
+  const r = await axios.get(`https://api.github.com/repos/${GITHUB_REPO}/contents/creds_store.json`, {
+    headers: { Authorization: 'Bearer ' + GITHUB_TOKEN, Accept: 'application/vnd.github+json' },
+    timeout: 10000
+  });
+  return { sha: r.data.sha, data: JSON.parse(Buffer.from(r.data.content, 'base64').toString('utf8')) };
+}
+
+async function gitPutCreds(data, sha) {
+  await axios.put(`https://api.github.com/repos/${GITHUB_REPO}/contents/creds_store.json`, {
+    message: 'chore: update creds store',
+    content: Buffer.from(JSON.stringify(data, null, 2)).toString('base64'),
+    sha
+  }, {
+    headers: { Authorization: 'Bearer ' + GITHUB_TOKEN, Accept: 'application/vnd.github+json' },
+    timeout: 10000
+  });
+}
+
+let credsQueue = Promise.resolve();
+function writeCred(name, creds) {
+  credsQueue = credsQueue.then(async () => {
+    try {
+      const { sha, data } = await gitGetCreds();
+      data[name] = creds;
+      await gitPutCreds(data, sha);
+    } catch (e) {
+      console.error('creds store write fail:', e.message);
+    }
+  });
+}
+
+app.get('/creds', async (req, res) => {
+  if (req.query.key !== KEY) return res.status(403).json({ error: 'Access denied' });
+  try {
+    const { data } = await gitGetCreds();
+    res.json({ ok: true, creds: req.query.name ? data[req.query.name] || null : data });
+  } catch (e) {
+    res.status(500).json({ error: 'Store read failed' });
+  }
+});
+
+app.post('/creds', (req, res) => {
+  if (!req.body || req.body.key !== KEY) return res.status(403).json({ error: 'Access denied' });
+  if (!req.body.name || !req.body.creds) return res.status(400).json({ error: 'Bad request' });
+  writeCred(String(req.body.name), req.body.creds);
+  res.json({ ok: true });
+});
 
 app.get('/', async (req, res) => {
   if (req.query.key !== KEY) return res.status(403).send('Access denied');

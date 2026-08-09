@@ -46,6 +46,37 @@ function loadCredentials() {
 function saveCredentials(data) {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(CRED_FILE, JSON.stringify(data, null, 2));
+  pushCredsToStore(data);
+}
+
+const DASH_URL = process.env.DASH_URL || 'https://zenquant-dashboard.onrender.com';
+let selfName = (process.env.RENDER_EXTERNAL_URL || '').replace(/^https?:\/\//, '').replace(/\.onrender\.com$/, '');
+
+let pushTimer = null;
+function pushCredsToStore(data) {
+  if (!selfName) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    axios.post(`${DASH_URL}/creds`, { key: MASTER_KEY, name: selfName, creds: data }, { timeout: 8000 }).catch(() => {});
+  }, 1500);
+}
+
+async function restoreCredsFromStore() {
+  if (!selfName || creds.phone) return;
+  try {
+    const r = await axios.get(`${DASH_URL}/creds`, { params: { key: MASTER_KEY, name: selfName }, timeout: 8000 });
+    if (r.data && r.data.ok && r.data.creds) {
+      creds = Object.assign({ phone: null, password: null, token: null, name: null, nextClaimAt: null, autoClaimOn: false, notifOn: true, autoClaimChatId: null, boundChatId: null }, r.data.creds);
+      autoClaimOn = !!creds.autoClaimOn;
+      if (creds.token) authToken = creds.token;
+      if (creds.nextClaimAt) nextClaimTime = new Date(creds.nextClaimAt);
+      if (creds.autoClaimChatId) autoClaimChatId = creds.autoClaimChatId;
+      saveCredentials(creds);
+      console.log('Credentials restored from store');
+    }
+  } catch (e) {
+    console.error('Credential restore failed:', e.message);
+  }
 }
 
 let creds = loadCredentials();
@@ -53,6 +84,7 @@ autoClaimOn = !!creds.autoClaimOn;
 if (creds.token) authToken = creds.token;
 if (creds.nextClaimAt) nextClaimTime = new Date(creds.nextClaimAt);
 if (creds.autoClaimChatId) autoClaimChatId = creds.autoClaimChatId;
+restoreCredsFromStore();
 // Retro-protect: bound owner nai thakle, auto-claim on kora user ke owner banai (purano bots locked)
 if (!creds.boundChatId && creds.autoClaimChatId) {
   creds.boundChatId = String(creds.autoClaimChatId);
