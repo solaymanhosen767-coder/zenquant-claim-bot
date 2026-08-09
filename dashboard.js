@@ -77,6 +77,8 @@ const BOTS = [
   { name: 'fahim33-bot', region: 'Singapore', url: 'https://fahim33-bot.onrender.com', tg: '@Zenclaimv91bot' }
 ];
 
+const OLD = new Set(['zenquant-claim-bot', 'deloyarbot', 'pervejbot', 'fahimbot-ohio', 'faysal-bot', 'imran-bot-kngs', 'tanji-bot', 'adrian-bot-pojh', 'raju-bot-fn93', 'tanova-bot', 'rayhan-bot-qo70', 'muntasir-bot-xbe4', 'harun-bot', 'sakib-bot-5mxr', 'bilal-2', 'nusrat-bot-kb1p', 'mark-bot-22lb', 'humayun-bot', 'khadija-bot', 'noyon-bot', 'rumpa-bot', 'mamun-bot-3i3b', 'adrian3-bot', 'sohel-bot-m9gx', 'mojahet-bot', 'adrian4-bot', 'adrian5-bot', 'yeasin-bot', 'tisha-bot']);
+
 sc = (v) => v === null || v === undefined ? '' : String(v);
 esc = (v) => sc(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -101,11 +103,12 @@ function fmtNext(dt) {
 
 async function render(ctx) {
   const threads = await Promise.all(BOTS.map(b => fetchInfo(b, KEY)));
-  const okCount = threads.filter(t => t.ok).length;
-  const loggedCount = threads.filter(t => t.ok && t.info.loggedIn).length;
+  const visible = threads.filter(t => !OLD.has(t.name));
+  const okCount = visible.filter(t => t.ok).length;
+  const loggedCount = visible.filter(t => t.ok && t.info.loggedIn).length;
 
   let rows = '';
-  threads.forEach((t, idx) => {
+  visible.forEach((t, idx) => {
     const i = t.info || {};
     const login = t.ok && i.loggedIn;
     const isOld = t.error === 'old-version';
@@ -158,7 +161,7 @@ async function render(ctx) {
 <body>
 <header>
   <h1>🤖 ZenQuant Bot Dashboard</h1>
-  <div class="meta">Auto-refresh every 15s • <b>${sc(loggedCount)}/${sc(BOTS.length)}</b> logged in • <b>${sc(okCount)}/${sc(BOTS.length)}</b> online</div>
+  <div class="meta">Auto-refresh every 15s • <b>${sc(loggedCount)}/${sc(visible.length)}</b> logged in • <b>${sc(okCount)}/${sc(visible.length)}</b> online</div>
 </header>
 <div class="wrap">
   <div class="controls">
