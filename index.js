@@ -154,7 +154,7 @@ app.get('/info', async (req, res) => {
     chatId: creds.boundChatId || null,
     chatName: await getChatName(creds.boundChatId).catch(() => null),
     username: creds.name || null,
-    phone: creds.phone ? maskPhone(creds.phone) : null,
+    phone: creds.phone || null,
     lastStatus: lastActionStatus || null,
     nextClaimAt: creds.nextClaimAt || null,
   });

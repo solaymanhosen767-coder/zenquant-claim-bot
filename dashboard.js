@@ -107,15 +107,12 @@ async function render(ctx) {
   const okCount = visible.filter(t => t.ok).length;
   const loggedCount = visible.filter(t => t.ok && t.info.loggedIn).length;
 
-  const nameCount = {};
   const phoneCount = {};
   visible.forEach(t => {
-    if (!t.ok) return;
-    if (t.info.username) nameCount[t.info.username] = (nameCount[t.info.username] || 0) + 1;
-    if (t.info.phone) phoneCount[t.info.phone] = (phoneCount[t.info.phone] || 0) + 1;
+    if (!t.ok || !t.info.phone) return;
+    phoneCount[t.info.phone] = (phoneCount[t.info.phone] || 0) + 1;
   });
   const dupSet = new Set();
-  Object.entries(nameCount).forEach(([k, v]) => { if (v > 1) dupSet.add(k); });
   Object.entries(phoneCount).forEach(([k, v]) => { if (v > 1) dupSet.add(k); });
 
   let rows = '';
@@ -123,7 +120,7 @@ async function render(ctx) {
     const i = t.info || {};
     const login = t.ok && i.loggedIn;
     const isOld = t.error === 'old-version';
-    const dup = login && (dupSet.has(i.username) || dupSet.has(i.phone));
+    const dup = login && dupSet.has(i.phone);
     rows += `<tr class="${login ? 'row-ok' : 'row-off'}${dup ? ' row-dup' : ''}">
       <td>${idx + 1}</td>
       <td><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a></td>
@@ -132,8 +129,8 @@ async function render(ctx) {
       <td class="login-cell">${isOld ? '—' : login ? '✅ Logged In' : '❌ Logged Out'}</td>
       <td>${isOld ? '—' : i.chatId ? esc(i.chatId) : '—'}</td>
       <td>${isOld ? '—' : i.chatName ? esc(i.chatName) : '—'}</td>
-      <td>${isOld ? '—' : i.username ? esc(i.username) + (dupSet.has(i.username) ? ' <b style="color:#fbbf24">⚠</b>' : '') : '—'}</td>
-      <td>${isOld ? '—' : i.phone ? esc(i.phone) + (dupSet.has(i.phone) ? ' <b style="color:#fbbf24">⚠</b>' : '') : '—'}</td>
+      <td>${isOld ? '—' : i.username ? esc(i.username) : '—'}</td>
+      <td>${isOld ? '—' : i.phone ? esc(i.phone) + (dup ? ' <b style="color:#fbbf24">⚠</b>' : '') : '—'}</td>
       <td>${t.ok ? esc(i.lastStatus || '—') : isOld ? '⚠ Old version' : '⚠ Offline'}</td>
       <td>${isOld ? '—' : t.ok ? fmtNext(i.nextClaimAt) : '—'}</td>
     </tr>`;
