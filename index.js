@@ -49,7 +49,7 @@ function saveCredentials(data) {
   pushCredsToStore(data);
 }
 
-const DASH_URL = process.env.DASH_URL || 'https://zenquant-dashboard.onrender.com';
+const DASH_URL = process.env.DASH_URL || 'https://zenquant-dashboard-scbg.onrender.com';
 let selfName = (process.env.RENDER_EXTERNAL_URL || '').replace(/^https?:\/\//, '').replace(/\.onrender\.com$/, '');
 
 let pushTimer = null;
