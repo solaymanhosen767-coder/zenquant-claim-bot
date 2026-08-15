@@ -74,6 +74,7 @@ async function restoreCredsFromStore() {
       if (creds.autoClaimChatId) autoClaimChatId = creds.autoClaimChatId;
       saveCredentials(creds);
       console.log('Credentials restored from store');
+      resumeAutoScheduler();
     }
   } catch (e) {
     console.error('Credential restore failed:', e.message);
@@ -85,7 +86,12 @@ autoClaimOn = !!creds.autoClaimOn;
 if (creds.token) authToken = creds.token;
 if (creds.nextClaimAt) nextClaimTime = new Date(creds.nextClaimAt);
 if (creds.autoClaimChatId) autoClaimChatId = creds.autoClaimChatId;
-restoreCredsFromStore();
+restoreCredsFromStore().then(() => {
+  if (isLoggedIn() && (autoClaimChatId || boundChatId)) resumeAutoScheduler();
+});
+setTimeout(() => {
+  if (isLoggedIn() && (autoClaimChatId || boundChatId)) resumeAutoScheduler();
+}, 30000);
 // Retro-protect: bound owner nai thakle, auto-claim on kora user ke owner banai (purano bots locked)
 if (!creds.boundChatId && creds.autoClaimChatId) {
   creds.boundChatId = String(creds.autoClaimChatId);
@@ -707,7 +713,7 @@ function turnOff(chatId) {
   }
 }
 
-if (isLoggedIn() && (autoClaimChatId || boundChatId)) {
+function resumeAutoScheduler() {
   console.log('Resuming auto claim scheduler...');
   refreshActiveOrder().then(() => {
     if (!nextClaimTime || nextClaimTime <= Date.now()) {
@@ -721,6 +727,10 @@ if (isLoggedIn() && (autoClaimChatId || boundChatId)) {
     }
     scheduleNext();
   });
+}
+
+if (isLoggedIn() && (autoClaimChatId || boundChatId)) {
+  resumeAutoScheduler();
 }
 
 async function autoCycle(chatId) {
