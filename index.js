@@ -696,17 +696,18 @@ function turnOff(chatId) {
 
  function scheduleNext() {
   if (claimTimer) clearTimeout(claimTimer);
-  if (!autoClaimOn || !autoClaimChatId) return;
+  const chatId = autoClaimChatId || boundChatId;
+  if (!isLoggedIn() || !chatId) return;
   const jitter = Math.floor(Math.random() * JITTER_MS);
   if (nextClaimTime) {
     const delay = Math.max(0, nextClaimTime.getTime() - Date.now()) + jitter;
-    claimTimer = setTimeout(() => { autoCycle(autoClaimChatId); }, delay);
+    claimTimer = setTimeout(() => { autoCycle(chatId); }, delay);
   } else {
-    claimTimer = setTimeout(() => { autoCycle(autoClaimChatId); }, CLAIM_INTERVAL_MS + jitter);
+    claimTimer = setTimeout(() => { autoCycle(chatId); }, CLAIM_INTERVAL_MS + jitter);
   }
 }
 
-if (autoClaimOn && isLoggedIn() && autoClaimChatId) {
+if (isLoggedIn() && (autoClaimChatId || boundChatId)) {
   console.log('Resuming auto claim scheduler...');
   refreshActiveOrder().then(() => {
     if (!nextClaimTime || nextClaimTime <= Date.now()) {
