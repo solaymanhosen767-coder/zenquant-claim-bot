@@ -117,12 +117,23 @@ async function autoLoginOnStart() {
 }
 autoLoginOnStart();
 
-// Keep session alive: ping API every 30 min to prevent token expiry
+// Keep session alive + refresh balance snapshot (passive, no claims)
 setInterval(() => {
   if (authToken) {
-    api.get('/get_info', {}).catch(() => {});
+    apiGetInfo().then(info => {
+      const u = (info && info.userinfo) || {};
+      if (u && u.balance !== undefined) {
+        lastBalance = {
+          cash: Number(u.balance || 0),
+          available: Number(u.available_balance || 0),
+          total: Number(u.total_balance || 0),
+          virtual: Number(u.virtual_balance || 0),
+          ts: new Date().toISOString()
+        };
+      }
+    }).catch(() => {});
   }
-}, 30 * 60 * 1000);
+}, 10 * 60 * 1000);
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Android 14; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0',
