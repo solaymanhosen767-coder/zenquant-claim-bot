@@ -27,6 +27,7 @@ let claimTimer = null;
 let nextClaimTime = null;
 let lastActionTime = null;
 let lastActionStatus = 'Kono action hoyni';
+let lastBalance = null;           // last known account balance snapshot
 let lastInjectionTime = null;    // last SUCCESSFUL injection time
 let lastClaimAmount = null;      // last SUCCESSFUL claim amount
 let isClaiming = false;
@@ -189,6 +190,7 @@ app.get('/info', async (req, res) => {
     phone: creds.phone || null,
     lastStatus: lastActionStatus || null,
     nextClaimAt: creds.nextClaimAt || null,
+    balance: lastBalance,
   });
 });
 
@@ -752,6 +754,7 @@ async function runClaim(chatId, manual, isAuto) {
     const total = Number(u.total_balance || 0);
     const virtualBal = Number(u.virtual_balance || 0);
     const virtualCd = Number(u.virtual_count_down || 0);
+    lastBalance = { cash: cashBalance, available: availQuota, total, virtual: virtualBal, ts: new Date().toISOString() };
 
     // Step 1: try global claim endpoint
     let profit = 0, claimCount = 0;

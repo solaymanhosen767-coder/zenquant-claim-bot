@@ -115,6 +115,20 @@ function fmtNext(dt) {
   return d.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+function fmtBal(b) {
+  if (!b || b.cash === null || b.cash === undefined) return '—';
+  const parts = [`Cash: $${fmtMoney(b.cash)}`];
+  if (b.available) parts.push(`Avail: $${fmtMoney(b.available)}`);
+  if (b.total) parts.push(`Total: $${fmtMoney(b.total)}`);
+  if (b.virtual) parts.push(`Virtual: $${fmtMoney(b.virtual)}`);
+  if (b.ts) parts.push(`as of ${fmtNext(b.ts)}`);
+  return `<span title="${esc(parts.join(' • '))}">$${fmtMoney(b.cash)}</span>`;
+}
+
+function fmtMoney(n) {
+  return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 async function render(ctx) {
   const threads = await Promise.all(BOTS.map(b => fetchInfo(b, KEY)));
   const visible = threads.filter(t => !OLD.has(t.name));
@@ -128,6 +142,16 @@ async function render(ctx) {
   });
   const dupSet = new Set();
   Object.entries(phoneCount).forEach(([k, v]) => { if (v > 1) dupSet.add(k); });
+
+  let sumCash = 0, sumTotal = 0, balCount = 0;
+  visible.forEach(t => {
+    const b = (t.info || {}).balance;
+    if (t.ok && b && (b.cash !== null && b.cash !== undefined)) {
+      sumCash += Number(b.cash) || 0;
+      sumTotal += Number(b.total) || 0;
+      balCount++;
+    }
+  });
 
   let rows = '';
   visible.forEach((t, idx) => {
@@ -145,6 +169,7 @@ async function render(ctx) {
       <td>${isOld ? '—' : i.chatName ? esc(i.chatName) : '—'}</td>
       <td>${isOld ? '—' : i.username ? esc(i.username) : '—'}</td>
       <td>${isOld ? '—' : i.phone ? esc(i.phone) + (dup ? ' <b style="color:#fbbf24">⚠</b>' : '') : '—'}</td>
+      <td>${isOld ? '—' : t.ok ? fmtBal(i.balance) : '—'}</td>
       <td>${t.ok ? esc(i.lastStatus || '—') : isOld ? '⚠ Old version' : '⚠ Offline'}</td>
       <td>${isOld ? '—' : t.ok ? fmtNext(i.nextClaimAt) : '—'}</td>
     </tr>`;
@@ -179,6 +204,9 @@ async function render(ctx) {
   .row-off .login-cell { color: #f87171; }
   .status-cell { color: #8b98a9; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .time { color: #6b7a8d; font-size: 12px; }
+  .balance-bar { margin: 12px 18px 0; padding: 10px 14px; background: linear-gradient(90deg, #14532d, #1e3a5f); border: 1px solid #2a3441; border-radius: 8px; font-size: 14px; color: #e7e9ee; }
+  .balance-bar .bal-sum { color: #4ade80; font-size: 16px; }
+  .balance-bar .bal-sub { color: #9fb0c3; font-size: 12px; }
   @media (max-width: 720px) { .hide-sm { display: none; } input[type=text] { width: 100%; } }
 </style>
 </head>
@@ -187,6 +215,7 @@ async function render(ctx) {
   <h1>🤖 ZenQuant Bot Dashboard</h1>
   <div class="meta">Auto-refresh every 15s • <b>${sc(loggedCount)}/${sc(visible.length)}</b> logged in • <b>${sc(okCount)}/${sc(visible.length)}</b> online</div>
 </header>
+<div class="balance-bar">💰 <b>Total Balance:</b> $<span class="bal-sum">${fmtMoney(sumTotal)}</span> <span class="bal-sub">(Cash $${fmtMoney(sumCash)} across ${balCount} bot${balCount === 1 ? '' : 's'})</span></div>
 <div class="wrap">
   <div class="controls">
     <input type="text" id="q" placeholder="🔍 Search bot / user / id..." oninput="filterRows()">
@@ -194,7 +223,7 @@ async function render(ctx) {
   </div>
   <table>
     <thead><tr>
-      <th>#</th><th>Bot</th><th>Region</th><th>TG</th><th>Login</th><th>User ID</th><th>User Name</th><th>ZQ Name</th><th>Phone</th><th>Status</th><th>Next Claim</th>
+      <th>#</th><th>Bot</th><th>Region</th><th>TG</th><th>Login</th><th>User ID</th><th>User Name</th><th>ZQ Name</th><th>Phone</th><th>Balance</th><th>Status</th><th>Next Claim</th>
     </tr></thead>
     <tbody id="tbody">${rows}</tbody>
   </table>
