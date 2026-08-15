@@ -87,7 +87,8 @@ const BOTS = [
   { name: 'faysal5-bot', region: 'Singapore', url: 'https://faysal5-bot.onrender.com', tg: '@Zenclaimv98bot' },
   { name: 'bilal2-bot', region: 'Virginia', url: 'https://bilal2-bot.onrender.com', tg: '@Zenclaimv99bot' },
   { name: 'fahim36-bot', region: 'Ohio', url: 'https://fahim36-bot.onrender.com', tg: '@Zenclaimv100bot' },
-  { name: 'fahim37-bot', region: 'Frankfurt', url: 'https://fahim37-bot.onrender.com', tg: '@Zenclaimv101bot' }
+  { name: 'fahim37-bot', region: 'Frankfurt', url: 'https://fahim37-bot.onrender.com', tg: '@Zenclaimv101bot' },
+  { name: 'fahim38-bot', region: 'Oregon', url: 'https://fahim38-bot.onrender.com', tg: '@Zenclaimv102bot' }
 ];
 
 const OLD = new Set(['zenquant-claim-bot', 'deloyarbot', 'pervejbot', 'fahimbot-ohio', 'faysal-bot', 'imran-bot-kngs', 'tanji-bot', 'adrian-bot-pojh', 'raju-bot-fn93', 'tanova-bot', 'rayhan-bot-qo70', 'muntasir-bot-xbe4', 'harun-bot', 'sakib-bot-5mxr', 'bilal-2', 'nusrat-bot-kb1p', 'mark-bot-22lb', 'humayun-bot', 'khadija-bot', 'noyon-bot', 'rumpa-bot', 'mamun-bot-3i3b', 'adrian3-bot', 'sohel-bot-m9gx', 'mojahet-bot', 'adrian4-bot', 'adrian5-bot', 'yeasin-bot', 'tisha-bot']);
