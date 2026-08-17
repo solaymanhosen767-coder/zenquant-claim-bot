@@ -117,13 +117,13 @@ function fmtNext(dt) {
 }
 
 function fmtBal(b) {
-  if (!b || b.cash === null || b.cash === undefined) return '—';
-  const parts = [`Cash: $${fmtMoney(b.cash)}`];
+  if (!b || b.total === null || b.total === undefined) return '—';
+  const parts = [`Total: $${fmtMoney(b.total)}`];
+  if (b.cash) parts.push(`Cash: $${fmtMoney(b.cash)}`);
   if (b.available) parts.push(`Avail: $${fmtMoney(b.available)}`);
-  if (b.total) parts.push(`Total: $${fmtMoney(b.total)}`);
   if (b.virtual) parts.push(`Virtual: $${fmtMoney(b.virtual)}`);
   if (b.ts) parts.push(`as of ${fmtNext(b.ts)}`);
-  return `<span title="${esc(parts.join(' • '))}">$${fmtMoney(b.cash)}</span>`;
+  return `<span title="${esc(parts.join(' • '))}">$${fmtMoney(b.total)}</span>`;
 }
 
 function fmtMoney(n) {
@@ -147,7 +147,7 @@ async function render(ctx) {
   let sumCash = 0, sumTotal = 0, balCount = 0;
   visible.forEach(t => {
     const b = (t.info || {}).balance;
-    if (t.ok && b && (b.cash !== null && b.cash !== undefined)) {
+    if (t.ok && b && (b.total !== null && b.total !== undefined)) {
       sumCash += Number(b.cash) || 0;
       sumTotal += Number(b.total) || 0;
       balCount++;
