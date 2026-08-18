@@ -21,7 +21,7 @@ const BOTS = [
   { name: 'rakibul-bot', region: 'Frankfurt', url: 'https://rakibul-bot.onrender.com', tg: '' },
   { name: 'harun-bot', region: 'Oregon', url: 'https://harun-bot.onrender.com', tg: '@Zenclaimv34bot' },
   { name: 'sakib-bot-5mxr', region: 'Singapore', url: 'https://sakib-bot-5mxr.onrender.com', tg: '@Zenclaimv35bot' },
-  { name: 'rakib-bot-q0at', region: 'Virginia', url: 'https://rakib-bot-q0at.onrender.com', tg: '@Zenclaimv36bot' },
+  { name: 'rakib-bot-8ut1', region: 'Virginia', url: 'https://rakib-bot-8ut1.onrender.com', tg: '@Zenclaimv36bot' },
   { name: 'bilal-2', region: 'Oregon', url: 'https://bilal-2.onrender.com', tg: '@Zenclaimv37bot' },
   { name: 'nusrat-bot-kb1p', region: 'Frankfurt', url: 'https://nusrat-bot-kb1p.onrender.com', tg: '@Zenclaimv38bot' },
   { name: 'mark-bot-22lb', region: 'Virginia', url: 'https://mark-bot-22lb.onrender.com', tg: '@Zenclaimv39bot' },
