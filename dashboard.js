@@ -18,7 +18,7 @@ const BOTS = [
   { name: 'tanova-bot', region: 'Frankfurt', url: 'https://tanova-bot.onrender.com', tg: '@Zenclaimv30bot' },
   { name: 'rayhan-bot-qo70', region: 'Singapore', url: 'https://rayhan-bot-qo70.onrender.com', tg: '@Zenclaimv31bot' },
   { name: 'muntasir-bot-xbe4', region: 'Ohio', url: 'https://muntasir-bot-xbe4.onrender.com', tg: '@Zenclaimv32bot' },
-  { name: 'rakibul-bot', region: 'Frankfurt', url: 'https://rakibul-bot.onrender.com', tg: '@Zenclaimv33bot' },
+  { name: 'rakibul-bot', region: 'Frankfurt', url: 'https://rakibul-bot.onrender.com', tg: '' },
   { name: 'harun-bot', region: 'Oregon', url: 'https://harun-bot.onrender.com', tg: '@Zenclaimv34bot' },
   { name: 'sakib-bot-5mxr', region: 'Singapore', url: 'https://sakib-bot-5mxr.onrender.com', tg: '@Zenclaimv35bot' },
   { name: 'rakib-bot-q0at', region: 'Virginia', url: 'https://rakib-bot-q0at.onrender.com', tg: '@Zenclaimv36bot' },
