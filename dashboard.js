@@ -29,7 +29,7 @@ const BOTS = [
   { name: 'noyon-bot', region: 'Frankfurt', url: 'https://noyon-bot.onrender.com', tg: '@Zenclaimv42bot' },
   { name: 'rumpa-bot', region: 'Singapore', url: 'https://rumpa-bot.onrender.com', tg: '@Zenclaimv43bot' },
   { name: 'mamun-bot-3i3b', region: 'Ohio', url: 'https://mamun-bot-3i3b.onrender.com', tg: '@Zenclaimv44bot' },
-  { name: 'adrian2-bot', region: 'Virginia', url: 'https://adrian2-bot.onrender.com', tg: '@Zenclaimv45bot' },
+  { name: 'adrian2-bot', region: 'Virginia', url: 'https://adrian2-bot-uocn.onrender.com', tg: '@Zenclaimv45bot' },
   { name: 'adrian3-bot', region: 'Oregon', url: 'https://adrian3-bot.onrender.com', tg: '@Zenclaimv47bot' },
   { name: 'sohel-bot-m9gx', region: 'Frankfurt', url: 'https://sohel-bot-m9gx.onrender.com', tg: '@Zenclaimv46bot' },
   { name: 'mojahet-bot', region: 'Singapore', url: 'https://mojahet-bot.onrender.com', tg: '@Zenclaimv48bot' },
