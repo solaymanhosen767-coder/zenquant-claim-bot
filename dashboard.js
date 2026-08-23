@@ -18,10 +18,9 @@ const BOTS = [
   { name: 'tanova-bot', region: 'Frankfurt', url: 'https://tanova-bot.onrender.com', tg: '@Zenclaimv30bot' },
   { name: 'rayhan-bot-qo70', region: 'Singapore', url: 'https://rayhan-bot-qo70.onrender.com', tg: '@Zenclaimv31bot' },
   { name: 'muntasir-bot-xbe4', region: 'Ohio', url: 'https://muntasir-bot-xbe4.onrender.com', tg: '@Zenclaimv32bot' },
-  { name: 'rakibul-bot', region: 'Frankfurt', url: 'https://rakibul-bot.onrender.com', tg: '@Zenclaimv33bot' },
   { name: 'harun-bot', region: 'Oregon', url: 'https://harun-bot.onrender.com', tg: '@Zenclaimv34bot' },
   { name: 'sakib-bot-5mxr', region: 'Singapore', url: 'https://sakib-bot-5mxr.onrender.com', tg: '@Zenclaimv35bot' },
-  { name: 'rakib-bot-q0at', region: 'Virginia', url: 'https://rakib-bot-q0at.onrender.com', tg: '@Zenclaimv36bot' },
+  { name: 'rakib-bot-8ut1', region: 'Virginia', url: 'https://rakib-bot-8ut1.onrender.com', tg: '@Zenclaimv36bot' },
   { name: 'bilal-2', region: 'Oregon', url: 'https://bilal-2.onrender.com', tg: '@Zenclaimv37bot' },
   { name: 'nusrat-bot-kb1p', region: 'Frankfurt', url: 'https://nusrat-bot-kb1p.onrender.com', tg: '@Zenclaimv38bot' },
   { name: 'mark-bot-22lb', region: 'Virginia', url: 'https://mark-bot-22lb.onrender.com', tg: '@Zenclaimv39bot' },
@@ -30,7 +29,7 @@ const BOTS = [
   { name: 'noyon-bot', region: 'Frankfurt', url: 'https://noyon-bot.onrender.com', tg: '@Zenclaimv42bot' },
   { name: 'rumpa-bot', region: 'Singapore', url: 'https://rumpa-bot.onrender.com', tg: '@Zenclaimv43bot' },
   { name: 'mamun-bot-3i3b', region: 'Ohio', url: 'https://mamun-bot-3i3b.onrender.com', tg: '@Zenclaimv44bot' },
-  { name: 'adrian2-bot', region: 'Virginia', url: 'https://adrian2-bot.onrender.com', tg: '@Zenclaimv45bot' },
+  { name: 'adrian2-bot', region: 'Virginia', url: 'https://adrian2-bot-uocn.onrender.com', tg: '@Zenclaimv45bot' },
   { name: 'adrian3-bot', region: 'Oregon', url: 'https://adrian3-bot.onrender.com', tg: '@Zenclaimv47bot' },
   { name: 'sohel-bot-m9gx', region: 'Frankfurt', url: 'https://sohel-bot-m9gx.onrender.com', tg: '@Zenclaimv46bot' },
   { name: 'mojahet-bot', region: 'Singapore', url: 'https://mojahet-bot.onrender.com', tg: '@Zenclaimv48bot' },
@@ -42,7 +41,7 @@ const BOTS = [
   { name: 'adrian7-bot', region: 'Virginia', url: 'https://adrian7-bot.onrender.com', tg: '@Zenclaimv57bot' },
   { name: 'fahim2-bot', region: 'Oregon', url: 'https://fahim2-bot.onrender.com', tg: '@Zenclaimv58bot' },
   { name: 'fahim3-bot', region: 'Virginia', url: 'https://fahim3-bot.onrender.com', tg: '@Zenclaimv59bot' },
-  { name: 'pervej-bot', region: 'Singapore', url: 'https://pervej-bot.onrender.com', tg: '@Zenclaimv60bot' },
+  { name: 'pervej-bot', region: 'Virginia', url: 'https://pervej-bot-q3sj.onrender.com', tg: '@Zenclaimv60bot' },
   { name: 'adrian8-bot', region: 'Oregon', url: 'https://adrian8-bot.onrender.com', tg: '@Zenclaimv61bot' },
   { name: 'adrian9-bot', region: 'Virginia', url: 'https://adrian9-bot.onrender.com', tg: '@Zenclaimv62bot' },
   { name: 'fahim4-bot', region: 'Frankfurt', url: 'https://fahim4-bot.onrender.com', tg: '@Zenclaimv63bot' },
@@ -88,7 +87,12 @@ const BOTS = [
   { name: 'bilal2-bot', region: 'Virginia', url: 'https://bilal2-bot.onrender.com', tg: '@Zenclaimv99bot' },
   { name: 'fahim36-bot', region: 'Ohio', url: 'https://fahim36-bot.onrender.com', tg: '@Zenclaimv100bot' },
   { name: 'fahim37-bot', region: 'Frankfurt', url: 'https://fahim37-bot.onrender.com', tg: '@Zenclaimv101bot' },
-  { name: 'fahim38-bot', region: 'Oregon', url: 'https://fahim38-bot.onrender.com', tg: '@Zenclaimv102bot' }
+  { name: 'fahim38-bot', region: 'Oregon', url: 'https://fahim38-bot.onrender.com', tg: '@Zenclaimv102bot' },
+  { name: 'rayhan2-bot', region: 'Virginia', url: 'https://rayhan2-bot.onrender.com', tg: '@Zenclaimv103bot' },
+  { name: 'adrian10-bot', region: 'Singapore', url: 'https://adrian10-bot.onrender.com', tg: '@Zenclaimv33bot' },
+  { name: 'bilal3-bot', region: 'Ohio', url: 'https://bilal3-bot.onrender.com', tg: '@Zenclaimv37bot' },
+  { name: 'fahim39-bot', region: 'Oregon', url: 'https://fahim39-bot.onrender.com', tg: '@Zenclaimv48bot' },
+  { name: 'faysal6-bot', region: 'Singapore', url: 'https://faysal6-bot.onrender.com', tg: '@Zenclaimversion8bot' }
 ];
 
 const OLD = new Set(['zenquant-claim-bot', 'deloyarbot', 'pervejbot', 'fahimbot-ohio', 'faysal-bot', 'imran-bot-kngs', 'tanji-bot', 'adrian-bot-pojh', 'raju-bot-fn93', 'tanova-bot', 'rayhan-bot-qo70', 'muntasir-bot-xbe4', 'harun-bot', 'sakib-bot-5mxr', 'bilal-2', 'nusrat-bot-kb1p', 'mark-bot-22lb', 'humayun-bot', 'khadija-bot', 'noyon-bot', 'rumpa-bot', 'mamun-bot-3i3b', 'adrian3-bot', 'sohel-bot-m9gx', 'mojahet-bot', 'adrian4-bot', 'adrian5-bot', 'yeasin-bot', 'tisha-bot']);
@@ -115,6 +119,20 @@ function fmtNext(dt) {
   return d.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+function fmtBal(b) {
+  if (!b || b.total === null || b.total === undefined) return '—';
+  const parts = [`Total: $${fmtMoney(b.total)}`];
+  if (b.cash) parts.push(`Cash: $${fmtMoney(b.cash)}`);
+  if (b.available) parts.push(`Avail: $${fmtMoney(b.available)}`);
+  if (b.virtual) parts.push(`Virtual: $${fmtMoney(b.virtual)}`);
+  if (b.ts) parts.push(`as of ${fmtNext(b.ts)}`);
+  return `<span title="${esc(parts.join(' • '))}">$${fmtMoney(b.total)}</span>`;
+}
+
+function fmtMoney(n) {
+  return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 async function render(ctx) {
   const threads = await Promise.all(BOTS.map(b => fetchInfo(b, KEY)));
   const visible = threads.filter(t => !OLD.has(t.name));
@@ -128,6 +146,16 @@ async function render(ctx) {
   });
   const dupSet = new Set();
   Object.entries(phoneCount).forEach(([k, v]) => { if (v > 1) dupSet.add(k); });
+
+  let sumCash = 0, sumTotal = 0, balCount = 0;
+  visible.forEach(t => {
+    const b = (t.info || {}).balance;
+    if (t.ok && b && (b.total !== null && b.total !== undefined)) {
+      sumCash += Number(b.cash) || 0;
+      sumTotal += Number(b.total) || 0;
+      balCount++;
+    }
+  });
 
   let rows = '';
   visible.forEach((t, idx) => {
@@ -145,6 +173,7 @@ async function render(ctx) {
       <td>${isOld ? '—' : i.chatName ? esc(i.chatName) : '—'}</td>
       <td>${isOld ? '—' : i.username ? esc(i.username) : '—'}</td>
       <td>${isOld ? '—' : i.phone ? esc(i.phone) + (dup ? ' <b style="color:#fbbf24">⚠</b>' : '') : '—'}</td>
+      <td>${isOld ? '—' : t.ok ? fmtBal(i.balance) : '—'}</td>
       <td>${t.ok ? esc(i.lastStatus || '—') : isOld ? '⚠ Old version' : '⚠ Offline'}</td>
       <td>${isOld ? '—' : t.ok ? fmtNext(i.nextClaimAt) : '—'}</td>
     </tr>`;
@@ -179,6 +208,9 @@ async function render(ctx) {
   .row-off .login-cell { color: #f87171; }
   .status-cell { color: #8b98a9; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .time { color: #6b7a8d; font-size: 12px; }
+  .balance-bar { margin: 12px 18px 0; padding: 10px 14px; background: linear-gradient(90deg, #14532d, #1e3a5f); border: 1px solid #2a3441; border-radius: 8px; font-size: 14px; color: #e7e9ee; }
+  .balance-bar .bal-sum { color: #4ade80; font-size: 16px; }
+  .balance-bar .bal-sub { color: #9fb0c3; font-size: 12px; }
   @media (max-width: 720px) { .hide-sm { display: none; } input[type=text] { width: 100%; } }
 </style>
 </head>
@@ -187,6 +219,7 @@ async function render(ctx) {
   <h1>🤖 ZenQuant Bot Dashboard</h1>
   <div class="meta">Auto-refresh every 15s • <b>${sc(loggedCount)}/${sc(visible.length)}</b> logged in • <b>${sc(okCount)}/${sc(visible.length)}</b> online</div>
 </header>
+<div class="balance-bar">💰 <b>Total Balance:</b> $<span class="bal-sum">${fmtMoney(sumTotal)}</span> <span class="bal-sub">(Cash $${fmtMoney(sumCash)} across ${balCount} bot${balCount === 1 ? '' : 's'})</span></div>
 <div class="wrap">
   <div class="controls">
     <input type="text" id="q" placeholder="🔍 Search bot / user / id..." oninput="filterRows()">
@@ -194,7 +227,7 @@ async function render(ctx) {
   </div>
   <table>
     <thead><tr>
-      <th>#</th><th>Bot</th><th>Region</th><th>TG</th><th>Login</th><th>User ID</th><th>User Name</th><th>ZQ Name</th><th>Phone</th><th>Status</th><th>Next Claim</th>
+      <th>#</th><th>Bot</th><th>Region</th><th>TG</th><th>Login</th><th>User ID</th><th>User Name</th><th>ZQ Name</th><th>Phone</th><th>Balance</th><th>Status</th><th>Next Claim</th>
     </tr></thead>
     <tbody id="tbody">${rows}</tbody>
   </table>

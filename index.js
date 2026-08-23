@@ -27,6 +27,7 @@ let claimTimer = null;
 let nextClaimTime = null;
 let lastActionTime = null;
 let lastActionStatus = 'Kono action hoyni';
+let lastBalance = null;           // last known account balance snapshot
 let lastInjectionTime = null;    // last SUCCESSFUL injection time
 let lastClaimAmount = null;      // last SUCCESSFUL claim amount
 let isClaiming = false;
@@ -49,7 +50,7 @@ function saveCredentials(data) {
   pushCredsToStore(data);
 }
 
-const DASH_URL = process.env.DASH_URL || 'https://zenquant-dashboard-scbg.onrender.com';
+const DASH_URL = process.env.DASH_URL || 'https://zenquant-claim-bot-production-9882.up.railway.app';
 let selfName = (process.env.RENDER_EXTERNAL_URL || '').replace(/^https?:\/\//, '').replace(/\.onrender\.com$/, '');
 
 let pushTimer = null;
@@ -73,6 +74,7 @@ async function restoreCredsFromStore() {
       if (creds.autoClaimChatId) autoClaimChatId = creds.autoClaimChatId;
       saveCredentials(creds);
       console.log('Credentials restored from store');
+      resumeAutoScheduler();
     }
   } catch (e) {
     console.error('Credential restore failed:', e.message);
@@ -84,7 +86,12 @@ autoClaimOn = !!creds.autoClaimOn;
 if (creds.token) authToken = creds.token;
 if (creds.nextClaimAt) nextClaimTime = new Date(creds.nextClaimAt);
 if (creds.autoClaimChatId) autoClaimChatId = creds.autoClaimChatId;
-restoreCredsFromStore();
+restoreCredsFromStore().then(() => {
+  if (isLoggedIn() && (autoClaimChatId || boundChatId)) resumeAutoScheduler();
+});
+setTimeout(() => {
+  if (isLoggedIn() && (autoClaimChatId || boundChatId)) resumeAutoScheduler();
+}, 30000);
 // Retro-protect: bound owner nai thakle, auto-claim on kora user ke owner banai (purano bots locked)
 if (!creds.boundChatId && creds.autoClaimChatId) {
   creds.boundChatId = String(creds.autoClaimChatId);
@@ -116,12 +123,23 @@ async function autoLoginOnStart() {
 }
 autoLoginOnStart();
 
-// Keep session alive: ping API every 30 min to prevent token expiry
+// Keep session alive + refresh balance snapshot (passive, no claims)
 setInterval(() => {
   if (authToken) {
-    api.get('/get_info', {}).catch(() => {});
+    apiGetInfo().then(info => {
+      const u = (info && info.userinfo) || {};
+      if (u && u.balance !== undefined) {
+        lastBalance = {
+          cash: Number(u.balance || 0),
+          available: Number(u.available_balance || 0),
+          total: Number(u.total_balance || 0),
+          virtual: Number(u.virtual_balance || 0),
+          ts: new Date().toISOString()
+        };
+      }
+    }).catch(() => {});
   }
-}, 30 * 60 * 1000);
+}, 10 * 60 * 1000);
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Android 14; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0',
@@ -189,6 +207,7 @@ app.get('/info', async (req, res) => {
     phone: creds.phone || null,
     lastStatus: lastActionStatus || null,
     nextClaimAt: creds.nextClaimAt || null,
+    balance: lastBalance,
   });
 });
 
@@ -683,17 +702,18 @@ function turnOff(chatId) {
 
  function scheduleNext() {
   if (claimTimer) clearTimeout(claimTimer);
-  if (!autoClaimOn || !autoClaimChatId) return;
+  const chatId = autoClaimChatId || boundChatId;
+  if (!isLoggedIn() || !chatId) return;
   const jitter = Math.floor(Math.random() * JITTER_MS);
   if (nextClaimTime) {
     const delay = Math.max(0, nextClaimTime.getTime() - Date.now()) + jitter;
-    claimTimer = setTimeout(() => { autoCycle(autoClaimChatId); }, delay);
+    claimTimer = setTimeout(() => { autoCycle(chatId); }, delay);
   } else {
-    claimTimer = setTimeout(() => { autoCycle(autoClaimChatId); }, CLAIM_INTERVAL_MS + jitter);
+    claimTimer = setTimeout(() => { autoCycle(chatId); }, CLAIM_INTERVAL_MS + jitter);
   }
 }
 
-if (autoClaimOn && isLoggedIn() && autoClaimChatId) {
+function resumeAutoScheduler() {
   console.log('Resuming auto claim scheduler...');
   refreshActiveOrder().then(() => {
     if (!nextClaimTime || nextClaimTime <= Date.now()) {
@@ -707,6 +727,10 @@ if (autoClaimOn && isLoggedIn() && autoClaimChatId) {
     }
     scheduleNext();
   });
+}
+
+if (isLoggedIn() && (autoClaimChatId || boundChatId)) {
+  resumeAutoScheduler();
 }
 
 async function autoCycle(chatId) {
@@ -752,6 +776,7 @@ async function runClaim(chatId, manual, isAuto) {
     const total = Number(u.total_balance || 0);
     const virtualBal = Number(u.virtual_balance || 0);
     const virtualCd = Number(u.virtual_count_down || 0);
+    lastBalance = { cash: cashBalance, available: availQuota, total, virtual: virtualBal, ts: new Date().toISOString() };
 
     // Step 1: try global claim endpoint
     let profit = 0, claimCount = 0;
