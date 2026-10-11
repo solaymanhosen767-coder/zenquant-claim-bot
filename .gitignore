@@ -2,3 +2,4 @@ node_modules/
 data/
 .env
 *.png
+creds_store.json
