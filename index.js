@@ -398,7 +398,7 @@ function mainMenu() {
     ]);
     btns.push([
       { text: '⚡ Claim', callback_data: 'claim_now' },
-      { text: '✅ Inject', callback_data: 'confirm_inject' }
+      { text: '✅ Create Order', callback_data: 'confirm_inject' }
     ]);
     btns.push([
       { text: '💵 Set Amount', callback_data: 'set_amount' },
@@ -424,7 +424,7 @@ bot.onText(/\/start/, async (msg) => {
     if (creds.name) lines.push(`👤 *Name:* ${creds.name}`);
     lines.push(`📱 *Phone:* ${maskPhone(creds.phone)}`);
     if (lastInjectionTime) {
-      lines.push(`💉 *Last Injection:* ${lastInjectionTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
+      lines.push(`💉 *Last Order:* ${lastInjectionTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
     }
     if (hasActiveOrder && nextClaimTime) {
       const remainingMs = Math.max(0, nextClaimTime.getTime() - Date.now());
@@ -450,7 +450,7 @@ bot.onText(/\/help/, (msg) => {
     '/logout — Logout\n' +
     '/status — Account status + next claim time\n' +
     '/claim — Claim available profit\n' +
-    '/confirm — Inject PLUS+ (optional: /confirm 50)\n' +
+    '/confirm — Create 3h order (optional: /confirm 50)\n' +
     '/profit — Profit history (last 30 days)\n' +
     '/history — Order history\n' +
     '/help — Ei message',
@@ -494,7 +494,7 @@ bot.onText(/\/confirm ?(.+)?/, (msg, match) => {
   if (amount !== null) pendingAmount[msg.chat.id] = amount;
   if (amount === null && !pendingAmount[msg.chat.id]) {
     pendingAmount[msg.chat.id] = 'awaiting';
-    return bot.sendMessage(msg.chat.id, '💵 Koto amount inject korben? Type kore din (e.g. 50)\n\n🚫 Cancel korle "cancel" likhun.');
+    return bot.sendMessage(msg.chat.id, '💵 Koto amount order korben? Type kore din (e.g. 50)\n\n🚫 Cancel korle "cancel" likhun.');
   }
   runConfirm(msg.chat.id, false, pendingAmount[msg.chat.id]);
 });
@@ -603,7 +603,7 @@ bot.on('callback_query', async (query) => {
     }
     if (action === 'confirm_inject') {
       if (!requireLogin()) return bot.answerCallbackQuery(query.id);
-      await bot.answerCallbackQuery(query.id, { text: 'Injection shuru hocche...' });
+      await bot.answerCallbackQuery(query.id, { text: 'Order create hocche...' });
       const amt = pendingAmount[chatId] && pendingAmount[chatId] !== 'awaiting' ? pendingAmount[chatId] : null;
       return await runConfirm(chatId, false, amt);
     }
@@ -621,7 +621,7 @@ bot.on('callback_query', async (query) => {
     }
     if (action === 'set_amount') {
       pendingAmount[chatId] = 'awaiting';
-      bot.sendMessage(chatId, '💵 Koto amount inject korben? Type kore din (e.g. 50)\n\n🚫 Cancel korle "cancel" likhun.');
+      bot.sendMessage(chatId, '💵 Koto amount order korben? Type kore din (e.g. 50)\n\n🚫 Cancel korle "cancel" likhun.');
       return bot.answerCallbackQuery(query.id);
     }
     if (action === 'profit') {
@@ -649,7 +649,7 @@ async function sendStatus(chatId) {
   lines.push('');
   lines.push(`🔄 *Auto Claim:* ${autoClaimOn ? 'ON' : 'OFF'}`);
   if (lastInjectionTime) {
-    lines.push(`💉 *Last Injection:* ${lastInjectionTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
+    lines.push(`💉 *Last Order:* ${lastInjectionTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
   }
   if (lastClaimAmount) {
     lines.push(`💰 *Last Claim:* $${lastClaimAmount}`);
@@ -854,18 +854,18 @@ async function runClaim(chatId, manual, isAuto) {
       if (virtualBal > 0 && virtualCd > 0) {
         // Don't suggest injection — virtual is active
       } else {
-        send(`🔁 Auto mode: ekhon nijer theke *Confirm Injection* cholbe...`);
+        send(`🔁 Auto mode: ekhon nijer theke *Create Order* cholbe...`);
       }
     } else {
       const confirmBtns = {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '✅ Confirm Injection', callback_data: 'confirm_inject' }],
+            [{ text: '✅ Create Order', callback_data: 'confirm_inject' }],
             [{ text: '📊 Status', callback_data: 'status' }]
           ]
         }
       };
-      send(`Ekhon injection nite chaile *Confirm Injection* button e click korun.`, confirmBtns);
+      send(`Ekhon order create korte *Create Order* button e click korun.`, confirmBtns);
     }
 
   } catch (err) {
@@ -887,12 +887,12 @@ async function runConfirm(chatId, isAuto, customAmount) {
       isClaiming = false;
       console.log('isClaiming was stuck >5min, force reset');
     } else {
-      return bot.sendMessage(chatId, '⏳ Age injection shesh hok, wait korun.');
+      return bot.sendMessage(chatId, '⏳ Age order create shesh hok, wait korun.');
     }
   }
   if (hasActiveOrder) {
-    lastActionStatus = 'ℹ️ Already have an active order, skip injection';
-    if (!isAuto) bot.sendMessage(chatId, 'ℹ️ Age active order shesh hok, tarpor inject korben.');
+    lastActionStatus = 'ℹ️ Already have an active order, skip';
+    if (!isAuto) bot.sendMessage(chatId, 'ℹ️ Age active order shesh hok, tarpor order korben.');
     return;
   }
   isClaiming = true;
@@ -917,19 +917,14 @@ async function runConfirm(chatId, isAuto, customAmount) {
     const u = info?.userinfo || {};
 
     let amount = customAmount || Math.floor(orderBalance);
-    const MAX_INJECT = 50;
-    if (amount > MAX_INJECT && !customAmount) {
-      amount = MAX_INJECT;
-      send(`ℹ️ Balance $${orderBalance}, but max injection $${MAX_INJECT}. Using $${MAX_INJECT}.`);
-    }
-
-    if (amount < 1) {
+    const MIN_ORDER = 10;
+    if (amount < MIN_ORDER) {
       hasActiveOrder = false; activeOrderCountdown = 0;
-      lastActionStatus = `ℹ️ Balance kom ($${orderBalance}), injection skip`;
+      lastActionStatus = `ℹ️ Balance kom ($${orderBalance}), order skip`;
       nextClaimTime = new Date(Date.now() + CLAIM_INTERVAL_MS);
       creds.nextClaimAt = nextClaimTime.toISOString();
       saveCredentials(creds);
-      send(`ℹ️ Balance kom ($${orderBalance}). 1 dollar na hole injection hobe na.
+      send(`ℹ️ Balance kom ($${orderBalance}). Minimum $${MIN_ORDER} lagbe.
 🔜 পরের চেষ্টা: ${nextClaimTime.toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`);
       return;
     }
@@ -939,39 +934,18 @@ async function runConfirm(chatId, isAuto, customAmount) {
       amount = Math.floor(orderBalance);
     }
 
-    send(`⏳ PLUS+ injection create korchi $${amount} (balance: $${orderBalance})...`);
-    const order1 = await apiCreateOrder(2, amount, 0);
+    send(`⏳ 3h order create korchi $${amount} (balance: $${orderBalance})...`);
+    const order1 = await apiCreateOrder(1, amount, 0);
     if (!order1.success) {
       hasActiveOrder = false; activeOrderCountdown = 0;
-      throw new Error('PLUS+ injection failed: ' + (order1.msg || JSON.stringify(order1.data).substring(0, 100)));
+      throw new Error('Order create failed: ' + (order1.msg || JSON.stringify(order1.data).substring(0, 100)));
     }
 
-    let injectedMsg = `➕ PLUS+: $${amount} (3H)`;
-
-    // Remaining balance → Closed 3h order (type=1, minuteIndex=180)
-    try {
-      await new Promise(r => setTimeout(r, 20000));
-      const di2 = await apiGetDealInfo();
-      const remBal = Math.floor(Number(di2.data?.userinfo?.balance || 0));
-      if (remBal >= 10) {
-        send(`⏳ Remaining $${remBal} → Closed 3h order creating...`);
-        const order2 = await apiCreateOrder(1, remBal, 180);
-        if (order2.success) {
-          injectedMsg += `\n🔒 Closed: $${remBal} (3H)`;
-        } else {
-          send(`ℹ️ Closed skip: ${order2.msg}`);
-        }
-      } else {
-        send(`ℹ️ Remaining $${remBal} < $10, no Closed order.`);
-      }
-    } catch (e) {
-      console.error('Closed order error:', e.message);
-      send(`ℹ️ Closed order error: ${e.message}`);
-    }
+    let injectedMsg = `✅ 3h Order: $${amount}`;
 
     lastActionTime = new Date();
     lastInjectionTime = new Date();
-    lastActionStatus = `✅ Injected`;
+    lastActionStatus = `✅ Order created`;
 
     // Receive_times from site = actual countdown in seconds
     let countdownSec = 0;
@@ -1000,7 +974,7 @@ async function runConfirm(chatId, isAuto, customAmount) {
     creds.nextClaimAt = nextClaimTime.toISOString();
     saveCredentials(creds);
 
-    send(`✅ *Injection successful!*
+    send(`✅ *Order created!*
 ━━━━━━━━━━━━━━━━
 ${injectedMsg}
 ⏳ Countdown: ${formatCountdown(activeOrderCountdown)} + 2min buffer
@@ -1118,7 +1092,7 @@ async function runHistory(chatId) {
           }
           const amount = Number(order.amount || order.price || order.money || 0);
           const typeIdx = Number(order.deal_type ?? order.type ?? -1);
-          const typeName = ['Regular', 'Closed', 'PLUS+', 'Phoenix'][typeIdx] || `T${typeIdx}`;
+          const typeName = ['Regular', 'Closed', 'Quick', 'Phoenix'][typeIdx] || `T${typeIdx}`;
           const sMap = { 1: '⚡Active', 2: '⏳Redeem', 3: '✅Done', 4: '⏹Stop' };
           const status = sMap[order.status] || `S${order.status}`;
           const sn = (order.ordersn || order.orderNo || order.orderno || '').toString().slice(-8);
