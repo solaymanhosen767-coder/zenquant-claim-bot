@@ -298,8 +298,10 @@ const bot = (isRailway || isRender)
   : new TelegramBot(BOT_TOKEN, { polling: true });
 
 if (isRailway) {
-  const RAILWAY_URL = `https://zenquant-bot-2.railway.app`;
-  bot.setWebHook(`${RAILWAY_URL}/webhook/${BOT_TOKEN}`);
+  let host = process.env.RAILWAY_PUBLIC_DOMAIN || process.env.PUBLIC_URL || '';
+  if (!host) host = 'zenquant-claim-bot-production-cd89.up.railway.app';
+  if (!/^https?:\/\//.test(host)) host = 'https://' + host;
+  bot.setWebHook(`${host}/webhook/${BOT_TOKEN}`);
   app.post(`/webhook/${BOT_TOKEN}`, (req, res) => {
     bot.processUpdate(req.body);
     res.sendStatus(200);
