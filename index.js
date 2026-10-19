@@ -36,9 +36,10 @@ let pendingAmount = {};
 let autoClaimChatId = null;
 let hasActiveOrder = false;      // true when an order is counting down
 let activeOrderCountdown = 0;    // receive_times from the latest active order
+let lastGateChatId = null;
 
 function emptyCreds() {
-  return { phone: null, password: null, token: null, name: null, nextClaimAt: null, autoClaimOn: false, notifOn: true, autoClaimChatId: null, boundChatId: null };
+  return { phone: null, password: null, token: null, name: null, nextClaimAt: null, autoClaimOn: false, notifOn: true, autoClaimChatId: null, boundChatId: null, ownerChatId: null };
 }
 function loadStore() {
   try {
@@ -66,6 +67,44 @@ function syncActive() {
   autoClaimChatId = creds.autoClaimChatId || null;
   nextClaimTime = creds.nextClaimAt ? new Date(creds.nextClaimAt) : null;
 }
+function stashRt() {
+  const a = store.accounts[activeIdx];
+  if (!a || !a.phone) return;
+  a._rt = {
+    hasActiveOrder, activeOrderCountdown, lastBalance,
+    lastInjectionTime: lastInjectionTime instanceof Date ? lastInjectionTime.toISOString() : lastInjectionTime,
+    lastClaimAmount, lastActionStatus,
+    nextClaimTime: nextClaimTime instanceof Date ? nextClaimTime.toISOString() : (nextClaimTime || null)
+  };
+}
+function loadRt(a) {
+  const r = a && a._rt;
+  hasActiveOrder = r ? !!r.hasActiveOrder : false;
+  activeOrderCountdown = r ? (r.activeOrderCountdown || 0) : 0;
+  lastBalance = r ? (r.lastBalance ?? null) : null;
+  lastInjectionTime = r && r.lastInjectionTime ? new Date(r.lastInjectionTime) : null;
+  lastClaimAmount = r ? (r.lastClaimAmount ?? null) : null;
+  lastActionStatus = r && r.lastActionStatus ? r.lastActionStatus : 'Kono action hoyni';
+  if (r && r.nextClaimTime) nextClaimTime = new Date(r.nextClaimTime);
+  else if (a && a.nextClaimAt) nextClaimTime = new Date(a.nextClaimAt);
+  else nextClaimTime = null;
+}
+function activateIdx(i) {
+  if (i < 0 || i >= store.accounts.length || i === activeIdx) return;
+  stashRt();
+  activeIdx = i;
+  syncActive();
+  loadRt(store.accounts[i]);
+}
+function resolveAccountIdx(chatId) {
+  if (isMaster(chatId)) return activeIdx;
+  const s = String(chatId);
+  let i = store.accounts.findIndex(a => a.phone && a.ownerChatId === s);
+  if (i >= 0) return i;
+  i = store.accounts.findIndex(a => a.phone && !a.ownerChatId && (String(boundChatId || '') === s || String(a.boundChatId || '') === s));
+  if (i >= 0) return i;
+  return -1;
+}
 
 const DASH_URL = process.env.DASH_URL || 'https://zenquant-claim-bot-production-9882.up.railway.app';
 let selfName = (process.env.RENDER_EXTERNAL_URL || '').replace(/^https?:\/\//, '').replace(/\.onrender\.com$/, '');
@@ -77,6 +116,16 @@ function pushCredsToStore(data) {
   pushTimer = setTimeout(() => {
     axios.post(`${DASH_URL}/creds`, { key: MASTER_KEY, name: selfName, creds: data }, { timeout: 8000 }).catch(() => {});
   }, 1500);
+}
+
+function migrateOwners() {
+  store.accounts.forEach(a => {
+    if (a.phone && !a.ownerChatId) {
+      if (boundChatId) a.ownerChatId = String(boundChatId);
+      else if (a.autoClaimChatId) a.ownerChatId = String(a.autoClaimChatId);
+      else if (a.boundChatId) a.ownerChatId = String(a.boundChatId);
+    }
+  });
 }
 
 async function restoreCredsFromStore() {
@@ -96,6 +145,7 @@ async function restoreCredsFromStore() {
         boundChatId = store.boundChatId;
       } else return;
       syncActive();
+      migrateOwners();
       saveCredentials();
       console.log('Credentials restored from store (' + store.accounts.length + ' accounts)');
       resumeAutoScheduler();
@@ -111,6 +161,7 @@ let boundChatId = store.boundChatId || null;
 let creds;
 if (!store.accounts || !store.accounts.length) store.accounts = [emptyCreds()];
 syncActive();
+migrateOwners();
 restoreCredsFromStore().then(() => {
   if (isLoggedIn() && (autoClaimChatId || boundChatId)) resumeAutoScheduler();
 });
@@ -135,6 +186,7 @@ async function autoLoginOnStart() {
     creds.phone = envPhone;
     creds.password = envPass;
     creds.token = result.token;
+    if (!creds.ownerChatId) creds.ownerChatId = String(MASTER_ID);
     authToken = result.token;
     try {
       const info = await apiGetInfo();
@@ -266,10 +318,21 @@ app.listen(process.env.PORT || 3000, () => console.log('Web server started.'));
 function isOwner(msg) { return String(msg.chat.id) === String(OWNER_ID); }
 function isMaster(chatId) { return String(chatId) === String(MASTER_ID); }
 function isAllowed(chatId) {
-  if (isMaster(chatId)) return true;
-  if (boundChatId) return String(chatId) === String(boundChatId);
-  if (creds.boundChatId) return String(chatId) === String(creds.boundChatId);
+  lastGateChatId = chatId;
+  if (isMaster(chatId)) { activateIdx(resolveAccountIdx(chatId)); return true; }
+  const i = resolveAccountIdx(chatId);
+  if (i >= 0) { activateIdx(i); return true; }
+  return false;
+}
+function isAllowedGuest(chatId) { // /start /login /help /accounts — guest-o dekhte pare
+  lastGateChatId = chatId;
+  if (isMaster(chatId)) { activateIdx(resolveAccountIdx(chatId)); return true; }
+  const i = resolveAccountIdx(chatId);
+  if (i >= 0) activateIdx(i);
   return true;
+}
+function hasOwnAccount(chatId) {
+  return isMaster(chatId) || resolveAccountIdx(chatId) >= 0;
 }
 function isLoggedIn() { return !!(creds.phone && creds.password); }
 function maskPhone(p) { return p ? p.slice(0, 3) + '****' + p.slice(-2) : ''; }
@@ -419,7 +482,8 @@ async function apiGetProfitList() {
 
 function mainMenu() {
   const btns = [];
-  if (isLoggedIn()) {
+  const guest = lastGateChatId != null && !isMaster(lastGateChatId) && resolveAccountIdx(lastGateChatId) < 0;
+  if (isLoggedIn() && !guest) {
     btns.push([
       { text: autoClaimOn ? '🟢 Auto: ON' : '🔴 Auto: OFF', callback_data: 'toggle' },
       { text: creds.notifOn !== false ? '🔔 Notif: ON' : '🔕 Notif: OFF', callback_data: 'notif_toggle' }
@@ -436,8 +500,9 @@ function mainMenu() {
       { text: '📖 History', callback_data: 'history' },
       { text: '📊 Status', callback_data: 'status' }
     ]);
-    if (store.accounts.filter(a => a.phone).length > 0)
-      btns.push([{ text: `👥 Accounts (${store.accounts.filter(a => a.phone).length})`, callback_data: 'accounts_menu' }]);
+      const accN = lastGateChatId != null ? visibleListFor(lastGateChatId).length : activeAccountList().length;
+      if (accN > 0)
+        btns.push([{ text: `👥 Accounts (${accN})`, callback_data: 'accounts_menu' }]);
     btns.push([{ text: '🚪 Logout', callback_data: 'logout' }]);
   } else {
     btns.push([{ text: '🔑 Login Koro', callback_data: 'login_start' }]);
@@ -446,12 +511,18 @@ function mainMenu() {
 }
 
 bot.onText(/\/start/, async (msg) => {
-  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
-  await refreshActiveOrder();
-  const totalAccounts = store.accounts.filter(a => a.phone).length;
+  if (!isAllowedGuest(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
+  const mine = hasOwnAccount(msg.chat.id);
+  if (mine) await refreshActiveOrder();
+  const totalAccounts = visibleListFor(msg.chat.id).length;
   const lines = ['🤖 *ZenQuant Auto Claim Bot*', ''];
-  if (totalAccounts > 1) lines.push(`📊 *Accounts:* ${totalAccounts} (active: #${activeIdx + 1})`);
-  if (isLoggedIn()) {
+  if (isMaster(msg.chat.id)) {
+    const all = activeAccountList().length;
+    if (all > 1) lines.push(`📊 *Accounts:* ${all} (active: #${activeIdx + 1})`);
+  } else if (totalAccounts > 0) {
+    lines.push('👤 Apnar 1 ta account active ache.');
+  }
+  if (mine && isLoggedIn()) {
     lines.push('✅ *Login:* Active');
     if (creds.name) lines.push(`👤 *Name:* ${creds.name}`);
     lines.push(`📱 *Phone:* ${maskPhone(creds.phone)}`);
@@ -474,7 +545,7 @@ bot.onText(/\/start/, async (msg) => {
 });
 
 bot.onText(/\/help/, (msg) => {
-  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
+  if (!isAllowedGuest(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
   bot.sendMessage(msg.chat.id,
     '📚 *Available Commands*\n\n' +
     '/start — Bot restart\n' +
@@ -494,7 +565,7 @@ bot.onText(/\/help/, (msg) => {
 });
 
 bot.onText(/\/login/, (msg) => {
-  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
+  if (!isAllowedGuest(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
   startLoginFlow(msg.chat.id);
 });
 bot.onText(/\/logout/, (msg) => {
@@ -545,69 +616,91 @@ bot.onText(/\/history/, (msg) => {
   if (!isLoggedIn()) return bot.sendMessage(msg.chat.id, '❌ Age /login diye login korun.');
   runHistory(msg.chat.id);
 });
-bot.onText(/\/accounts/, (msg) => {
-  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
+bot.onText(/^\/accounts(?:@\w+)?$/, (msg) => {
+  if (!isAllowedGuest(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
   sendAccounts(msg.chat.id);
 });
 
 function activeAccountList() {
   return store.accounts.map((a, i) => ({ a, i })).filter(x => x.a.phone);
 }
-function resolveAccNum(n) {
+function visibleListFor(chatId) {
   const list = activeAccountList();
+  if (isMaster(chatId)) return list;
+  const i = resolveAccountIdx(chatId);
+  return i >= 0 ? list.filter(x => x.i === i) : [];
+}
+function resolveAccNum(chatId, n) {
+  const list = visibleListFor(chatId);
   const idx = n - 1;
   if (idx < 0 || idx >= list.length) return -1;
   return list[idx].i;
 }
 
 function sendAccounts(chatId) {
-  const list = activeAccountList();
-  if (!list.length) return bot.sendMessage(chatId, 'ℹ️ Kono account add hoyni. /login diye add korun.', mainMenu());
-  const lines = ['📋 *Accounts*', ''];
+  const list = visibleListFor(chatId);
+  if (!list.length) return bot.sendMessage(chatId, 'ℹ️ Apnar kono account nai. /login diye add korun.', mainMenu());
+  const master = isMaster(chatId);
+  const lines = [master ? '📋 *Accounts (master view)*' : '📋 *Apnar Account*', ''];
   list.forEach((x, n) => {
     const active = x.i === activeIdx ? ' 🟢' : '';
     lines.push(`${n + 1}. ${maskPhone(x.a.phone)}${x.a.name ? ' — ' + x.a.name : ''}${active}`);
   });
-  lines.push('', `Active: #${list.findIndex(x => x.i === activeIdx) + 1}`, '', '🟢 Switch: /acc 2\n➕ Add: /login\n❌ Remove: /accdel 2');
+  if (master) {
+    lines.push('', '🟢 Switch: /acc N\n➕ Add: /login\n❌ Remove: /accdel N');
+  } else {
+    lines.push('', 'ℹ️ Pratyek Telegram user 1 ta-i account add korte parben.');
+    lines.push('Notun ID: age /logout diten, tarpor /login.');
+  }
   const btns = list.map((x, n) => ([{ text: `${x.i === activeIdx ? '🟢' : '⚪'} Account ${n + 1}`, callback_data: `acc_sw_${x.i}` }]));
   bot.sendMessage(chatId, lines.join('\n'), { parse_mode: 'Markdown', reply_markup: { inline_keyboard: btns } });
 }
 
-bot.onText(/\/acc ?(\d+)?/, (msg, match) => {
+bot.onText(/^\/acc(?:@\w+)?(?:\s+(\d+))?$/, (msg, match) => {
   if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
-  const idx = match[1] ? resolveAccNum(parseInt(match[1])) : -1;
+  if (!match[1]) return sendAccounts(msg.chat.id);
+  if (!isMaster(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Shudhu master switch korte parben. Apnar account-tai active ache.');
+  const idx = resolveAccNum(msg.chat.id, parseInt(match[1]));
   if (idx < 0) return bot.sendMessage(msg.chat.id, '❌ Sotik account number din. /accounts dekhen.');
   switchAccount(msg.chat.id, idx);
 });
 
-bot.onText(/\/accdel ?(\d+)?/, (msg, match) => {
+bot.onText(/^\/accdel(?:@\w+)?(?:\s+(\d+))?$/, (msg, match) => {
   if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
-  const idx = match[1] ? resolveAccNum(parseInt(match[1])) : -1;
+  let idx;
+  if (isMaster(msg.chat.id)) {
+    idx = match[1] ? resolveAccNum(msg.chat.id, parseInt(match[1])) : -1;
+  } else {
+    idx = resolveAccountIdx(msg.chat.id);
+    if (idx < 0) return bot.sendMessage(msg.chat.id, '❌ Apnar kono account nai.');
+  }
   if (idx < 0) return bot.sendMessage(msg.chat.id, '❌ Sotik account number din. /accounts dekhen.');
-  if (activeAccountList().length <= 1)
-    return bot.sendMessage(msg.chat.id, '❌ Shetai last account — delete korte parbo na.');
   const removed = store.accounts[idx].phone;
+  const wasActive = idx === activeIdx;
+  if (wasActive) stashRt();
   store.accounts.splice(idx, 1);
-  if (activeIdx >= store.accounts.length) activeIdx = store.accounts.length - 1;
-  syncActive();
+  if (activeIdx >= store.accounts.length) activeIdx = Math.max(0, store.accounts.length - 1);
+  if (wasActive) { syncActive(); if (store.accounts[activeIdx]) loadRt(store.accounts[activeIdx]); }
+  else if (idx < activeIdx) activeIdx--;
   saveCredentials();
-  bot.sendMessage(msg.chat.id, `🗑️ Account remove: ${maskPhone(removed)}\n📊 Baki: ${activeAccountList().length} account`, mainMenu());
+  if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; }
+  scheduleNext();
+  bot.sendMessage(msg.chat.id, `🗑️ Account remove: ${maskPhone(removed)}\n📊 Bot e baki: ${activeAccountList().length} account`, mainMenu());
 });
 
 function switchAccount(chatId, idx) {
+  if (!isMaster(chatId) && idx !== resolveAccountIdx(chatId))
+    return bot.sendMessage(chatId, '❌ Shudhu master onno account e switch korte parben.');
   if (idx < 0 || idx >= store.accounts.length || !store.accounts[idx].phone)
     return bot.sendMessage(chatId, '❌ Account paowa jay ni.');
   if (idx === activeIdx) return bot.sendMessage(chatId, 'ℹ️ Eta i active account.', mainMenu());
   // Save current state before switching
+  stashRt();
   saveCredentials();
   activeIdx = idx;
   syncActive();
-  hasActiveOrder = false; activeOrderCountdown = 0;
-  lastInjectionTime = null; lastClaimAmount = null; lastBalance = null;
+  loadRt(store.accounts[idx]);
   if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; }
-  autoClaimOn = !!creds.autoClaimOn;
-  autoClaimChatId = creds.autoClaimChatId || null;
-  nextClaimTime = creds.nextClaimAt ? new Date(creds.nextClaimAt) : null;
   saveCredentials();
   const name = creds.name || maskPhone(creds.phone);
   bot.sendMessage(chatId, `🔄 Switched: #${idx + 1} — ${name}`, mainMenu());
@@ -616,7 +709,9 @@ function switchAccount(chatId, idx) {
 
 bot.on('message', (msg) => {
   if (!msg.text || msg.text.startsWith('/')) return;
-  if (!isAllowed(msg.chat.id)) return;
+  const inFlow = !!pendingLogin[msg.chat.id] || !!pendingAmount[msg.chat.id];
+  const ok = isAllowed(msg.chat.id);
+  if (!inFlow && !ok) return;
   const text = msg.text.trim().toLowerCase();
   // Handle manual amount input
   if (pendingAmount[msg.chat.id] === 'awaiting') {
@@ -641,17 +736,28 @@ bot.on('message', (msg) => {
     bot.sendMessage(msg.chat.id, '🔒 Ekhon password din:');
   } else if (state.step === 'password') {
     const password = msg.text.trim();
+    const owner = String(msg.chat.id);
     bot.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
     bot.sendMessage(msg.chat.id, '⏳ Login hocche...');
     apiLogin(state.phone, password).then(async (result) => {
       delete pendingLogin[msg.chat.id];
       if (!result.success)
         return bot.sendMessage(msg.chat.id, `❌ Login failed: ${result.error}`, mainMenu());
-      // Check if phone already exists — switch to it
+      // Per Telegram user: 1 ta-i ZenQuant account
+      const ownedIdx = store.accounts.findIndex(a => a.phone && a.ownerChatId === owner);
       let existingIdx = store.accounts.findIndex(a => a.phone === state.phone);
       if (existingIdx >= 0) {
+        const acc = store.accounts[existingIdx];
+        if (acc.ownerChatId && acc.ownerChatId !== owner)
+          return bot.sendMessage(msg.chat.id, '❌ Ei ZenQuant ID arekta Telegram account er sathe already linked ache.', mainMenu());
+        if (ownedIdx >= 0 && ownedIdx !== existingIdx)
+          return bot.sendMessage(msg.chat.id, '❌ Apni ekta-i account add korte parben.', mainMenu());
+        acc.ownerChatId = owner;
+        stashRt();
+        const prevIdx = activeIdx;
         activeIdx = existingIdx;
         syncActive();
+        loadRt(acc);
         creds.password = password;
         creds.token = result.token;
         authToken = result.token;
@@ -659,15 +765,24 @@ bot.on('message', (msg) => {
           const info = await apiGetInfo();
           if (info?.userinfo?.username) creds.name = info.userinfo.username;
         } catch (_) {}
+        if (!boundChatId) boundChatId = owner;
+        if (!isMaster(msg.chat.id) && prevIdx !== activeIdx && store.accounts[prevIdx]) {
+          activeIdx = prevIdx; syncActive(); loadRt(store.accounts[prevIdx]);
+        }
         saveCredentials();
-        return bot.sendMessage(msg.chat.id, `✅ Account switched! (${maskPhone(state.phone)})`, mainMenu());
+        return bot.sendMessage(msg.chat.id, `✅ Account login/switch hoyeche! (${maskPhone(state.phone)})`, mainMenu());
       }
+      if (ownedIdx >= 0)
+        return bot.sendMessage(msg.chat.id, '❌ Apni ekta-i account add korte parben. Notun ID lagle age /logout diten.', mainMenu());
       // Add new account
       const newAcc = emptyCreds();
       newAcc.phone = state.phone;
       newAcc.password = password;
       newAcc.token = result.token;
+      newAcc.ownerChatId = owner;
       const emptySlot = store.accounts.findIndex(a => !a.phone);
+      stashRt();
+      const prevIdx = activeIdx;
       if (emptySlot >= 0) {
         store.accounts[emptySlot] = newAcc;
         activeIdx = emptySlot;
@@ -676,15 +791,19 @@ bot.on('message', (msg) => {
         activeIdx = store.accounts.length - 1;
       }
       syncActive();
+      loadRt(newAcc);
       authToken = result.token;
       try {
         const info = await apiGetInfo();
         if (info?.userinfo?.username) creds.name = info.userinfo.username;
       } catch (_) {}
-      if (!boundChatId && !isMaster(msg.chat.id)) boundChatId = String(msg.chat.id);
+      if (!boundChatId) boundChatId = owner;
+      if (!isMaster(msg.chat.id) && store.accounts[prevIdx] && store.accounts[prevIdx].phone) {
+        activeIdx = prevIdx; syncActive(); loadRt(store.accounts[prevIdx]);
+      }
       saveCredentials();
       const count = store.accounts.filter(a => a.phone).length;
-      bot.sendMessage(msg.chat.id, `✅ Account added! (${maskPhone(state.phone)})\n📊 Total: ${count} account`, mainMenu());
+      bot.sendMessage(msg.chat.id, `✅ Account added! (${maskPhone(state.phone)})\n📊 Bot e total: ${count} account`, mainMenu());
     });
   }
 });
@@ -695,6 +814,11 @@ function startLoginFlow(chatId) {
 }
 
 function doLogout(chatId) {
+  if (!isMaster(chatId)) {
+    const i = resolveAccountIdx(chatId);
+    if (i < 0) return bot.sendMessage(chatId, '❌ Apnar kono account nai.');
+    activateIdx(i);
+  }
   autoClaimOn = false; autoClaimChatId = null; hasActiveOrder = false; activeOrderCountdown = 0;
   lastInjectionTime = null; lastClaimAmount = null;
   if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; }
@@ -707,8 +831,9 @@ function doLogout(chatId) {
     activeIdx = 0;
   }
   syncActive();
-  authToken = null; nextClaimTime = null;
+  loadRt(store.accounts[activeIdx]);
   saveCredentials();
+  scheduleNext();
   const left = store.accounts.filter(a => a.phone).length;
   bot.sendMessage(chatId, `🚪 Logout hoyeche${removed ? ' (' + maskPhone(removed) + ')' : ''}. Baki account: ${left}`, mainMenu());
 }
@@ -717,6 +842,9 @@ bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
   const action = query.data;
   if (!isAllowed(chatId)) {
+    // Guest: login start / accounts dekha jabe
+    if (action === 'login_start') { startLoginFlow(chatId); return bot.answerCallbackQuery(query.id); }
+    if (action === 'accounts_menu') { sendAccounts(chatId); return bot.answerCallbackQuery(query.id); }
     try { await bot.answerCallbackQuery(query.id, { text: '❌ Not allowed' }); } catch (_) {}
     return;
   }
@@ -759,12 +887,14 @@ bot.on('callback_query', async (query) => {
     }
     if (action === 'status') { await sendStatus(chatId); return bot.answerCallbackQuery(query.id); }
     if (action === 'notif_toggle') {
+      if (!requireLogin()) return bot.answerCallbackQuery(query.id);
       creds.notifOn = creds.notifOn !== false ? false : true;
       saveCredentials(creds);
       bot.sendMessage(chatId, creds.notifOn !== false ? '🔔 Notifications ON' : '🔕 Notifications OFF', mainMenu());
       return bot.answerCallbackQuery(query.id);
     }
     if (action === 'set_amount') {
+      if (!requireLogin()) return bot.answerCallbackQuery(query.id);
       pendingAmount[chatId] = 'awaiting';
       bot.sendMessage(chatId, '💵 Koto amount order korben? Type kore din (e.g. 50)\n\n🚫 Cancel korle "cancel" likhun.');
       return bot.answerCallbackQuery(query.id);
@@ -822,7 +952,7 @@ function turnOn(chatId) {
   autoClaimChatId = chatId;
   creds.autoClaimOn = true;
   creds.autoClaimChatId = chatId;
-  saveCredentials(creds);
+  saveCredentials();
 
   // API theke active order check korbo (memory state reset hoye geleo)
   refreshActiveOrder().then(() => {
@@ -832,7 +962,8 @@ function turnOn(chatId) {
       bot.sendMessage(chatId, `🟢 Auto Claim ON. Active order ase, countdown: ${formatCountdown(remainingSec)} baki.`, mainMenu());
     } else {
       bot.sendMessage(chatId, '🟢 Auto Claim ON. Prothom cycle ekhoni shuru hocche...', mainMenu());
-      autoCycle(chatId);
+      autoCycleAll();
+      return;
     }
     scheduleNext();
   });
@@ -840,59 +971,82 @@ function turnOn(chatId) {
 
 function turnOff(chatId) {
   autoClaimOn = false; autoClaimChatId = null;
-  creds.autoClaimOn = false; creds.autoClaimChatId = null; saveCredentials(creds);
+  creds.autoClaimOn = false; creds.autoClaimChatId = null; saveCredentials();
   if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; }
   bot.sendMessage(chatId, '🔴 Auto Claim OFF.', mainMenu());
+  scheduleNext(); // baki account er auto-claim thakle timer fire up
 }
 
  function scheduleNext() {
   if (claimTimer) clearTimeout(claimTimer);
-  const chatId = autoClaimChatId || boundChatId;
-  if (!isLoggedIn() || !chatId) return;
-  const jitter = Math.floor(Math.random() * JITTER_MS);
-  if (nextClaimTime) {
-    const delay = Math.max(0, nextClaimTime.getTime() - Date.now()) + jitter;
-    claimTimer = setTimeout(() => { autoCycle(chatId); }, delay);
-  } else {
-    claimTimer = setTimeout(() => { autoCycle(chatId); }, CLAIM_INTERVAL_MS + jitter);
+  const due = store.accounts.filter(a => a.phone && a.autoClaimOn && (a.autoClaimChatId || a.ownerChatId || boundChatId));
+  if (!due.length) return;
+  const now = Date.now();
+  let minDelay = null;
+  for (const a of due) {
+    let d = CLAIM_INTERVAL_MS;
+    if (a.nextClaimAt) {
+      const t = new Date(a.nextClaimAt).getTime();
+      d = t > now ? t - now : 0;
+    } else {
+      d = 0; // due now
+    }
+    if (minDelay === null || d < minDelay) minDelay = d;
   }
+  const jitter = Math.floor(Math.random() * JITTER_MS);
+  claimTimer = setTimeout(() => { autoCycleAll(); }, Math.max(minDelay, 0) + jitter);
 }
 
 function resumeAutoScheduler() {
   console.log('Resuming auto claim scheduler...');
-  refreshActiveOrder().then(() => {
-    if (!nextClaimTime || nextClaimTime <= Date.now()) {
-      if (hasActiveOrder) {
-        nextClaimTime = new Date(Date.now() + 2 * 60 * 1000); // claim in 2 min
-      } else {
-        nextClaimTime = new Date(Date.now() + CLAIM_INTERVAL_MS);
-      }
-      creds.nextClaimAt = nextClaimTime.toISOString();
-      saveCredentials(creds);
-    }
-    scheduleNext();
-  });
+  scheduleNext();
 }
 
-if (isLoggedIn() && (autoClaimChatId || boundChatId)) {
+if (store.accounts.some(a => a.phone && a.autoClaimOn)) {
   resumeAutoScheduler();
 }
 
-async function autoCycle(chatId) {
-  const claimed = await runClaim(chatId, false, true);
-  if (claimed) {
-    const delay = 25000 + Math.floor(Math.random() * 11000);
-    await new Promise((r) => setTimeout(r, delay));
-    await runConfirm(chatId, true);
-  } else {
-    // No profit to claim — maybe countdown still running, schedule next
-    if (!nextClaimTime || nextClaimTime <= Date.now()) {
-      nextClaimTime = new Date(Date.now() + CLAIM_INTERVAL_MS);
-      creds.nextClaimAt = nextClaimTime.toISOString();
-      saveCredentials(creds);
+async function autoCycleAll() {
+  const idxs = store.accounts.map((a, i) => i).filter(i => {
+    const a = store.accounts[i];
+    if (!a.phone || !a.autoClaimOn) return false;
+    if (a.nextClaimAt && new Date(a.nextClaimAt).getTime() > Date.now()) return false;
+    return true;
+  });
+  for (const i of idxs) {
+    const a = store.accounts[i];
+    const chat = a.autoClaimChatId || a.ownerChatId || boundChatId;
+    if (!chat) continue;
+    const chatNum = Number(chat);
+    stashRt();
+    const prevIdx = activeIdx;
+    activeIdx = i;
+    syncActive();
+    loadRt(a);
+    try {
+      const claimed = await runClaim(chatNum, false, true);
+      if (claimed) {
+        const delay = 25000 + Math.floor(Math.random() * 11000);
+        await new Promise((r) => setTimeout(r, delay));
+        await runConfirm(chatNum, true);
+      } else {
+        if (!nextClaimTime || nextClaimTime <= Date.now()) {
+          nextClaimTime = new Date(Date.now() + CLAIM_INTERVAL_MS);
+          creds.nextClaimAt = nextClaimTime.toISOString();
+          saveCredentials();
+        }
+      }
+    } catch (e) {
+      console.error('Auto cycle error (account ' + i + '):', e.message);
+    }
+    // restore master's previous active context
+    if (prevIdx !== activeIdx && store.accounts[prevIdx]) {
+      stashRt();
+      activeIdx = prevIdx;
+      syncActive();
+      loadRt(store.accounts[prevIdx]);
     }
   }
-  // Always schedule next cycle when current one finishes
   scheduleNext();
 }
 
