@@ -37,6 +37,7 @@ let autoClaimChatId = null;
 let hasActiveOrder = false;      // true when an order is counting down
 let activeOrderCountdown = 0;    // receive_times from the latest active order
 let lastGateChatId = null;
+let masterOpIdx = -1;            // master er target account (user activation e change hoy na)
 
 function emptyCreds() {
   return { phone: null, password: null, token: null, name: null, nextClaimAt: null, autoClaimOn: false, notifOn: true, autoClaimChatId: null, boundChatId: null, ownerChatId: null };
@@ -53,6 +54,7 @@ function loadStore() {
 }
 function saveCredentials(_ignored) {
   store.activeIdx = activeIdx;
+  store.masterOpIdx = masterOpIdx;
   store.boundChatId = boundChatId || store.boundChatId || null;
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(CRED_FILE, JSON.stringify(store, null, 2));
@@ -97,13 +99,24 @@ function activateIdx(i) {
   loadRt(store.accounts[i]);
 }
 function resolveAccountIdx(chatId) {
-  if (isMaster(chatId)) return activeIdx;
+  if (isMaster(chatId)) return masterTargetIdx();
   const s = String(chatId);
   let i = store.accounts.findIndex(a => a.phone && a.ownerChatId === s);
   if (i >= 0) return i;
   i = store.accounts.findIndex(a => a.phone && !a.ownerChatId && (String(boundChatId || '') === s || String(a.boundChatId || '') === s));
   if (i >= 0) return i;
   return -1;
+}
+function masterTargetIdx() {
+  if (masterOpIdx >= 0 && masterOpIdx < store.accounts.length && store.accounts[masterOpIdx] && store.accounts[masterOpIdx].phone) return masterOpIdx;
+  const own = store.accounts.findIndex(a => a.ownerChatId === String(MASTER_ID));
+  if (own >= 0) return own;
+  return activeIdx;
+}
+function adjustMasterOpIdx(removedIdx) {
+  if (masterOpIdx < 0) return;
+  if (masterOpIdx === removedIdx) masterOpIdx = -1;
+  else if (masterOpIdx > removedIdx) masterOpIdx--;
 }
 
 const DASH_URL = process.env.DASH_URL || 'https://zenquant-claim-bot-production-9882.up.railway.app';
@@ -144,6 +157,7 @@ async function restoreCredsFromStore() {
         activeIdx = 0;
         boundChatId = store.boundChatId;
       } else return;
+      if (typeof store.masterOpIdx === 'number') masterOpIdx = store.masterOpIdx;
       syncActive();
       migrateOwners();
       saveCredentials();
@@ -160,6 +174,7 @@ let activeIdx = store.activeIdx || 0;
 let boundChatId = store.boundChatId || null;
 let creds;
 if (!store.accounts || !store.accounts.length) store.accounts = [emptyCreds()];
+if (typeof store.masterOpIdx === 'number') masterOpIdx = store.masterOpIdx;
 syncActive();
 migrateOwners();
 restoreCredsFromStore().then(() => {
@@ -584,7 +599,7 @@ bot.onText(/\/force_logout/, (msg) => {
   lastInjectionTime = null; lastClaimAmount = null;
   if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; }
   store = { accounts: [emptyCreds()], activeIdx: 0, boundChatId: null };
-  activeIdx = 0; boundChatId = null;
+  activeIdx = 0; boundChatId = null; masterOpIdx = -1;
   syncActive();
   authToken = null; nextClaimTime = null;
   saveCredentials();
@@ -681,6 +696,7 @@ bot.onText(/^\/accdel(?:@\w+)?(?:\s+(\d+))?$/, (msg, match) => {
   const wasActive = idx === activeIdx;
   if (wasActive) stashRt();
   store.accounts.splice(idx, 1);
+  adjustMasterOpIdx(idx);
   if (activeIdx >= store.accounts.length) activeIdx = Math.max(0, store.accounts.length - 1);
   if (wasActive) { syncActive(); if (store.accounts[activeIdx]) loadRt(store.accounts[activeIdx]); }
   else if (idx < activeIdx) activeIdx--;
@@ -700,6 +716,7 @@ function switchAccount(chatId, idx) {
   stashRt();
   saveCredentials();
   activeIdx = idx;
+  if (isMaster(chatId)) masterOpIdx = idx;
   syncActive();
   loadRt(store.accounts[idx]);
   if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; }
@@ -758,6 +775,7 @@ bot.on('message', (msg) => {
         stashRt();
         const prevIdx = activeIdx;
         activeIdx = existingIdx;
+        if (isMaster(msg.chat.id)) masterOpIdx = existingIdx;
         syncActive();
         loadRt(acc);
         creds.password = password;
@@ -795,6 +813,7 @@ bot.on('message', (msg) => {
       syncActive();
       loadRt(newAcc);
       authToken = result.token;
+      if (isMaster(msg.chat.id)) masterOpIdx = activeIdx;
       try {
         const info = await apiGetInfo();
         if (info?.userinfo?.username) creds.name = info.userinfo.username;
@@ -827,6 +846,7 @@ function doLogout(chatId) {
   const removed = creds.phone;
   if (store.accounts.length > 1) {
     store.accounts.splice(activeIdx, 1);
+    adjustMasterOpIdx(activeIdx);
     if (activeIdx >= store.accounts.length) activeIdx = 0;
   } else {
     store.accounts[0] = emptyCreds();
