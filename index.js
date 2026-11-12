@@ -17,6 +17,11 @@ const BUFFER_MS = 2 * 60 * 1000;
 const CLAIM_INTERVAL_MS = 3 * 60 * 60 * 1000 + BUFFER_MS;
 const JITTER_MS = 10 * 60 * 1000;
 
+// 3h order = 180 min. Auto-mode (type 0) terms are 90/180/360 DAYS -> receive_times in millions of seconds
+const THREE_H_SEC = 180 * 60;              // 10800
+const MAX_ORDER_SEC = 4 * 60 * 60;          // 14400 - hard cap, a real 3h order can never exceed this
+const MAX_SCHEDULE_MS = 6 * 60 * 60 * 1000; // stored nextClaimAt-er sanity cap (6h)
+
 const api = axios.create({ baseURL: API_BASE });
 let authToken = null;
 const DATA_DIR = path.join(__dirname, 'data');
@@ -356,46 +361,43 @@ function maskPhone(p) { return p ? p.slice(0, 3) + '****' + p.slice(-2) : ''; }
 async function refreshActiveOrder() {
   if (!isLoggedIn()) return;
   try {
-    const typesToTry = [null, 0, 2, 1];
-    for (const t of typesToTry) {
-      const dealRes = await apiGetDealList(1, 20, t);
-      if (dealRes.success && dealRes.data.length) {
-        for (const o of dealRes.data) {
-          console.log(`[refresh] type=${t} status=${o.status} sn=${(o.ordersn||'').slice(-8)} receive_times=${o.receive_times} profit=${o.profit} has_profit=${o.has_profit} is_receive=${o.is_receive}`);
-          const st = Number(o.status || 0);
-          const cd = Number(o.receive_times || 0);
-          const pf = Number(o.profit || 0);
-          const is_recv = Number(o.is_receive || 0);
-          // Active order with countdown > 0
-          if (st === 1 && cd > 0) {
-            hasActiveOrder = true;
-            activeOrderCountdown = cd;
-            nextClaimTime = new Date(Date.now() + (cd * 1000) + BUFFER_MS);
-            creds.nextClaimAt = nextClaimTime.toISOString();
-            saveCredentials(creds);
-            return;
-          }
-          // Order finished (status 2=Redeem, 3=Done) but profit not claimed yet
-          if ((st === 2 || st === 3) && pf > 0 && is_recv === 0) {
-            hasActiveOrder = true;
-            activeOrderCountdown = 0;
-            nextClaimTime = new Date(Date.now() + BUFFER_MS);
-            creds.nextClaimAt = nextClaimTime.toISOString();
-            saveCredentials(creds);
-            return;
-          }
-        }
-      } else {
-        console.log(`[refresh] type=${t} no data: success=${dealRes.success} len=${dealRes.data.length} msg=${dealRes.msg}`);
-      }
+    const list = await fetchAllDeals();
+    for (const o of list) {
+      console.log(`[refresh] type=${o.deal_type} status=${o.status} sn=${(o.ordersn||'').slice(-8)} receive_times=${o.receive_times} profit=${o.profit} has_profit=${o.has_profit} is_receive=${o.is_receive}`);
     }
-    // Also try getDealInfo as backup
-    try {
-      const infoRes = await apiGetDealInfo();
-      if (infoRes.success && infoRes.data) {
-        console.log(`[refresh] dealInfo: ${JSON.stringify(infoRes.data).substring(0, 200)}`);
-      }
-    } catch (_) {}
+
+    // 1) matured order with unclaimed profit -> claim korte dawa agey
+    const claimable = list.find(o => {
+      const st = Number(o.status || 0);
+      return (st === 2 || st === 3) && Number(o.profit || 0) > 0 && Number(o.is_receive || 0) === 0;
+    });
+    if (claimable) {
+      hasActiveOrder = true;
+      activeOrderCountdown = 0;
+      nextClaimTime = new Date(Date.now() + BUFFER_MS);
+      creds.nextClaimAt = nextClaimTime.toISOString();
+      saveCredentials(creds);
+      return;
+    }
+
+    // 2) amader nijer 3h order (deal_type=1) — shudhu ETAKEI track korbo
+    const three = list.filter(isThreeHourOrder).sort((a, b) => Number(a.receive_times || 0) - Number(b.receive_times || 0));
+    if (three.length) {
+      const cd = Number(three[0].receive_times || 0);
+      hasActiveOrder = true;
+      activeOrderCountdown = cd;
+      nextClaimTime = new Date(Date.now() + (cd * 1000) + BUFFER_MS);
+      creds.nextClaimAt = nextClaimTime.toISOString();
+      saveCredentials(creds);
+      return;
+    }
+
+    // 3) long-term order (90/180/360 din) thakle o 3h cycle block korbe na
+    const longs = list.filter(o => Number(o.status || 0) === 1 && !isThreeHourOrder(o));
+    if (longs.length) {
+      const l = longs.sort((a, b) => Number(b.receive_times || 0) - Number(a.receive_times || 0))[0];
+      console.log(`[refresh] long-term order present (deal_type=${l.deal_type}, ${formatCountdown(l.receive_times)} left) — 3h cycle er sathe mix korchi na`);
+    }
     hasActiveOrder = false;
     activeOrderCountdown = 0;
   } catch (e) {
@@ -413,6 +415,36 @@ function formatCountdown(sec) {
   if (m > 0) r += m + 'm ';
   r += s + 's';
   return r;
+}
+
+// Shesh-e kichu order (90/180/360 din er Auto-mode, deal_type=0) thakte pare — oigulo
+// 3h cycle-er count/schedule hijack kore. So: only deal_type===1 (3h order) track korbo.
+function isThreeHourOrder(o) {
+  if (!o) return false;
+  const rt = Number(o.receive_times || 0);
+  if (rt <= 0) return false;
+  const dtRaw = (o.deal_type !== undefined && o.deal_type !== null) ? o.deal_type : o.type;
+  if (dtRaw !== undefined && dtRaw !== null && Number.isFinite(Number(dtRaw))) {
+    if (Number(dtRaw) !== 1) return false;
+  }
+  return rt <= MAX_ORDER_SEC;
+}
+
+// Sob type theke ekta merged, unique deal list
+async function fetchAllDeals() {
+  const seen = new Set();
+  const out = [];
+  for (const t of [null, 0, 1, 2]) {
+    const r = await apiGetDealList(1, 50, t);
+    if (!r.success || !r.data || !r.data.length) continue;
+    for (const o of r.data) {
+      const sn = o.ordersn || JSON.stringify(o);
+      if (seen.has(sn)) continue;
+      seen.add(sn);
+      out.push(o);
+    }
+  }
+  return out;
 }
 
 async function apiLogin(phone, password) {
@@ -1010,6 +1042,11 @@ function turnOff(chatId) {
     if (a.nextClaimAt) {
       const t = new Date(a.nextClaimAt).getTime();
       d = t > now ? t - now : 0;
+      // 3h order er countdown 3h-er beshi hobe na — purano/garbage nextClaimAt (e.g. 1 year+) ignore
+      if (d > MAX_SCHEDULE_MS) {
+        console.log(`[schedule] account ${a.phone} nextClaimAt too far (${a.nextClaimAt}) — re-evaluating now`);
+        d = 0;
+      }
     } else {
       d = 0; // due now
     }
@@ -1136,24 +1173,27 @@ async function runClaim(chatId, manual, isAuto) {
       send(`✅ *Profit claimed!*`);
     } else {
       // Detection fallback (for display / state tracking)
-      for (const t of tryTypes) {
-        const dealRes = await apiGetDealList(1, 20, t);
-        if (dealRes.success && dealRes.data.length) {
-          for (const o of dealRes.data) {
-            const pf = Number(o.profit || 0);
-            const st = Number(o.status || 0);
-            const cd = Number(o.receive_times || 0);
-            if (pf > 0) {
-              profit = pf;
-              hasActiveOrder = (st === 1 || st === 2 || st === 3);
-              activeOrderCountdown = cd;
-              break;
-            }
-          }
-          if (profit > 0) break;
+      const allDeals = await fetchAllDeals();
+      for (const o of allDeals) {
+        const pf = Number(o.profit || 0);
+        const st = Number(o.status || 0);
+        const cd = Number(o.receive_times || 0);
+        if (pf > 0) {
+          profit = pf;
+          break;
         }
       }
-      if (profit === 0) await refreshActiveOrder();
+      // Countdown shudhu 3h order theke — long order (360 din) cycle block korbe na
+      const three = allDeals.filter(isThreeHourOrder).sort((a, b) => Number(a.receive_times || 0) - Number(b.receive_times || 0));
+      if (three.length) {
+        hasActiveOrder = true;
+        activeOrderCountdown = Number(three[0].receive_times || 0);
+        nextClaimTime = new Date(Date.now() + (activeOrderCountdown * 1000) + BUFFER_MS);
+        creds.nextClaimAt = nextClaimTime.toISOString();
+        saveCredentials(creds);
+      } else if (profit === 0) {
+        await refreshActiveOrder();
+      }
 
       if (hasActiveOrder && activeOrderCountdown > 0) {
         send(`⏳ Active order countdown: ${formatCountdown(activeOrderCountdown)} baki.`);
@@ -1272,15 +1312,16 @@ async function runConfirm(chatId, isAuto, customAmount) {
     let countdownSec = 0;
     try {
       await new Promise(r => setTimeout(r, 3000));
-      const dealRes = await apiGetDealList(1, 20, null);
-      if (dealRes.success && dealRes.data.length) {
-        const activeOrders = dealRes.data.filter(o => Number(o.status || 0) === 1 && Number(o.receive_times || 0) > 0);
-        if (activeOrders.length) {
-          const longest = activeOrders.sort((a, b) => Number(b.receive_times || 0) - Number(a.receive_times || 0))[0];
-          countdownSec = Number(longest.receive_times);
-        }
+      const list = await fetchAllDeals();
+      // Shudhu amader nijer 3h order (deal_type=1) — 360-din order er countdown niye na
+      const mine = list.filter(isThreeHourOrder);
+      if (mine.length) {
+        const exact = mine.find(o => Number(o.price || 0) === Number(amount));
+        const pick = exact || mine.sort((a, b) => Number(a.receive_times || 0) - Number(b.receive_times || 0))[0];
+        countdownSec = Number(pick.receive_times || 0);
       }
     } catch (_) {}
+
 
     if (countdownSec > 0) {
       hasActiveOrder = true;
