@@ -608,6 +608,7 @@ bot.onText(/\/help/, (msg) => {
     '/confirm — Create 3h order (optional: /confirm 50)\n' +
     '/profit — Profit history (last 30 days)\n' +
     '/history — Order history\n' +
+    '/orders — Live order list (type, countdown, balance)\n' +
     '/help — Ei message',
     { parse_mode: 'Markdown', ...mainMenu() }
   );
@@ -664,6 +665,31 @@ bot.onText(/\/history/, (msg) => {
   if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
   if (!isLoggedIn()) return bot.sendMessage(msg.chat.id, '❌ Age /login diye login korun.');
   runHistory(msg.chat.id);
+});
+bot.onText(/^\/orders(?:@\w+)?$/, async (msg) => {
+  if (!isAllowed(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
+  if (!isLoggedIn()) return bot.sendMessage(msg.chat.id, '❌ Age /login diye login korun.');
+  try {
+    await bot.sendMessage(msg.chat.id, '⏳ Orders fetch korchi...');
+    const list = await fetchAllDeals();
+    if (!list.length) return bot.sendMessage(msg.chat.id, 'ℹ️ Kono order nei.');
+    const lines = ['📋 *Orders*', ''];
+    for (const o of list.slice(0, 12)) {
+      const dt = o.deal_type !== undefined ? o.deal_type : o.type;
+      const rt = Number(o.receive_times || 0);
+      const st = Number(o.status || 0);
+      const kind = isThreeHourOrder(o) ? '3h' : (Number(dt) === 0 ? 'LONG(auto)' : `type ${dt}`);
+      const left = rt > 0 ? formatCountdown(rt) : (rt < 0 ? 'expired' : '-');
+      lines.push(`#${(o.ordersn || '').slice(-8)} | ${kind} | $${o.price} | status ${st} | left ${left} | recv ${o.is_receive ? 'yes' : 'no'} | profit ${o.profit}`);
+    }
+    const di = await apiGetDealInfo();
+    const ui = (di && di.data && di.data.userinfo) || {};
+    lines.push('');
+    lines.push(`💰 Cash: $${ui.balance} | Frozen: $${ui.freeze_balance} | Total: $${ui.total_balance} | Quota: $${ui.available_balance}`);
+    bot.sendMessage(msg.chat.id, lines.join('\n'));
+  } catch (e) {
+    bot.sendMessage(msg.chat.id, '❌ Error: ' + e.message);
+  }
 });
 bot.onText(/^\/accounts(?:@\w+)?$/, (msg) => {
   if (!isAllowedGuest(msg.chat.id)) return bot.sendMessage(msg.chat.id, '❌ Not allowed.');
