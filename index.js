@@ -22,6 +22,15 @@ const THREE_H_SEC = 180 * 60;              // 10800
 const MAX_ORDER_SEC = 4 * 60 * 60;          // 14400 - hard cap, a real 3h order can never exceed this
 const MAX_SCHEDULE_MS = 6 * 60 * 60 * 1000; // stored nextClaimAt-er sanity cap (6h)
 
+// Pure order helpers (lib/orders.js) + the API-backed helpers live here
+const {
+  formatCountdown,
+  isThreeHourOrder,
+  pickThreeHourOrders,
+  pickLongOrders,
+  pickClaimableOrders,
+} = require('./lib/orders');
+
 const api = axios.create({ baseURL: API_BASE });
 let authToken = null;
 const DATA_DIR = path.join(__dirname, 'data');
@@ -367,11 +376,8 @@ async function refreshActiveOrder() {
     }
 
     // 1) matured order with unclaimed profit -> claim korte dawa agey
-    const claimable = list.find(o => {
-      const st = Number(o.status || 0);
-      return (st === 2 || st === 3) && Number(o.profit || 0) > 0 && Number(o.is_receive || 0) === 0;
-    });
-    if (claimable) {
+    const claimable = pickClaimableOrders(list);
+    if (claimable.length) {
       hasActiveOrder = true;
       activeOrderCountdown = 0;
       nextClaimTime = new Date(Date.now() + BUFFER_MS);
@@ -381,7 +387,7 @@ async function refreshActiveOrder() {
     }
 
     // 2) amader nijer 3h order (deal_type=1) — shudhu ETAKEI track korbo
-    const three = list.filter(isThreeHourOrder).sort((a, b) => Number(a.receive_times || 0) - Number(b.receive_times || 0));
+    const three = pickThreeHourOrders(list);
     if (three.length) {
       const cd = Number(three[0].receive_times || 0);
       hasActiveOrder = true;
@@ -393,9 +399,9 @@ async function refreshActiveOrder() {
     }
 
     // 3) long-term order (90/180/360 din) thakle o 3h cycle block korbe na
-    const longs = list.filter(o => Number(o.status || 0) === 1 && !isThreeHourOrder(o));
+    const longs = pickLongOrders(list);
     if (longs.length) {
-      const l = longs.sort((a, b) => Number(b.receive_times || 0) - Number(a.receive_times || 0))[0];
+      const l = longs[0];
       console.log(`[refresh] long-term order present (deal_type=${l.deal_type}, ${formatCountdown(l.receive_times)} left) — 3h cycle er sathe mix korchi na`);
     }
     hasActiveOrder = false;
@@ -403,31 +409,6 @@ async function refreshActiveOrder() {
   } catch (e) {
     console.error('[refresh] error:', e.message);
   }
-}
-
-function formatCountdown(sec) {
-  if (!sec || sec <= 0) return '0s';
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  let r = '';
-  if (h > 0) r += h + 'h ';
-  if (m > 0) r += m + 'm ';
-  r += s + 's';
-  return r;
-}
-
-// Shesh-e kichu order (90/180/360 din er Auto-mode, deal_type=0) thakte pare — oigulo
-// 3h cycle-er count/schedule hijack kore. So: only deal_type===1 (3h order) track korbo.
-function isThreeHourOrder(o) {
-  if (!o) return false;
-  const rt = Number(o.receive_times || 0);
-  if (rt <= 0) return false;
-  const dtRaw = (o.deal_type !== undefined && o.deal_type !== null) ? o.deal_type : o.type;
-  if (dtRaw !== undefined && dtRaw !== null && Number.isFinite(Number(dtRaw))) {
-    if (Number(dtRaw) !== 1) return false;
-  }
-  return rt <= MAX_ORDER_SEC;
 }
 
 // Sob type theke ekta merged, unique deal list
@@ -1210,7 +1191,7 @@ async function runClaim(chatId, manual, isAuto) {
         }
       }
       // Countdown shudhu 3h order theke — long order (360 din) cycle block korbe na
-      const three = allDeals.filter(isThreeHourOrder).sort((a, b) => Number(a.receive_times || 0) - Number(b.receive_times || 0));
+      const three = pickThreeHourOrders(allDeals);
       if (three.length) {
         hasActiveOrder = true;
         activeOrderCountdown = Number(three[0].receive_times || 0);
@@ -1340,10 +1321,10 @@ async function runConfirm(chatId, isAuto, customAmount) {
       await new Promise(r => setTimeout(r, 3000));
       const list = await fetchAllDeals();
       // Shudhu amader nijer 3h order (deal_type=1) — 360-din order er countdown niye na
-      const mine = list.filter(isThreeHourOrder);
+      const mine = pickThreeHourOrders(list);
       if (mine.length) {
         const exact = mine.find(o => Number(o.price || 0) === Number(amount));
-        const pick = exact || mine.sort((a, b) => Number(a.receive_times || 0) - Number(b.receive_times || 0))[0];
+        const pick = exact || mine[0];
         countdownSec = Number(pick.receive_times || 0);
       }
     } catch (_) {}
