@@ -134,7 +134,12 @@ function adjustMasterOpIdx(removedIdx) {
 }
 
 const DASH_URL = process.env.DASH_URL || 'https://zenquant-claim-bot-production-9882.up.railway.app';
-let selfName = (process.env.RENDER_EXTERNAL_URL || '').replace(/^https?:\/\//, '').replace(/\.onrender\.com$/, '');
+let selfName = (
+  process.env.SELF_NAME ||
+  process.env.RAILWAY_PUBLIC_DOMAIN ||
+  (process.env.RENDER_EXTERNAL_URL || '').replace(/^https?:\/\//, '').replace(/\.onrender\.com$/, '') ||
+  ''
+);
 
 let pushTimer = null;
 function pushCredsToStore(data) {
